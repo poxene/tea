@@ -62,7 +62,7 @@ local function Clamp(value, minValue, maxValue)
 end
 
 local function SaveFrameSettings()
-  if not frame or IsLocked() then
+  if not frame then
     return
   end
 
@@ -375,7 +375,14 @@ local function TryShowResourceBars()
     return false
   end
 
+  local wasVisible = frame and frame:IsShown()
+
   GetOrCreateFrame()
+
+  if wasVisible then
+    SaveFrameSettings()
+  end
+
   ApplyFrameSettings()
   ApplyLockState()
   frame:Show()
