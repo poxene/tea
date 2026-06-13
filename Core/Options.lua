@@ -283,6 +283,15 @@ local function RefreshOneBagPanel()
   end
 end
 
+local function RefreshBagAppearance()
+  if Tea_BagRelayout then
+    Tea_BagRelayout()
+  end
+  if Tea_RefreshTrackHighlights then
+    Tea_RefreshTrackHighlights()
+  end
+end
+
 local function BuildOneBagPanel(panel)
   panel.tabTitle = "teaBag"
 
@@ -291,11 +300,7 @@ local function BuildOneBagPanel(panel)
   header:SetText("teaBag")
 
   local enable = CreateCheckbox(panel, "Enable one bag", { "modules", "oneBag" }, header, -12, {
-    onChange = function()
-      if Tea_BagRelayout then
-        Tea_BagRelayout()
-      end
-    end,
+    onChange = RefreshBagAppearance,
   })
 
   local columnsHint = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
@@ -311,18 +316,14 @@ local function BuildOneBagPanel(panel)
     1,
     columnsHint,
     -8,
-    function()
-      if Tea_BagRelayout then
-        Tea_BagRelayout()
-      end
-    end
+    RefreshBagAppearance
   )
 
   local slotHint = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
   slotHint:SetPoint("TOPLEFT", columnsSlider, "BOTTOMLEFT", 0, -18)
   slotHint:SetText("Slot size")
 
-  CreateSlider(
+  local slotSlider = CreateSlider(
     panel,
     "Slot size",
     { "oneBag", "slotSize" },
@@ -331,11 +332,23 @@ local function BuildOneBagPanel(panel)
     1,
     slotHint,
     -8,
-    function()
-      if Tea_BagRelayout then
-        Tea_BagRelayout()
-      end
-    end
+    RefreshBagAppearance
+  )
+
+  local paddingHint = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+  paddingHint:SetPoint("TOPLEFT", slotSlider, "BOTTOMLEFT", 0, -18)
+  paddingHint:SetText("Slot padding")
+
+  CreateSlider(
+    panel,
+    "Padding",
+    { "oneBag", "slotPadding" },
+    0,
+    8,
+    1,
+    paddingHint,
+    -8,
+    RefreshBagAppearance
   )
 end
 

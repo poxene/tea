@@ -55,4 +55,87 @@ function Util.IsGreyItem(itemID)
   return quality == Enum.ItemQuality.Poor
 end
 
+function Util.IsGreyItem(itemID)
+  if not itemID then
+    return false
+  end
+  local quality = select(3, Util.GetItemInfo(itemID))
+  return quality == Enum.ItemQuality.Poor
+end
+
+local BORDER_TEXTURE = "Interface\\Common\\WhiteIconFrame"
+
+function Util.GetIconBorderScale()
+  return 1
+end
+
+local function ApplyRoundedIconBorderLayout(border, anchor)
+  if not border or not anchor then
+    return
+  end
+
+  local iconSize = anchor:GetWidth()
+  if not iconSize or iconSize <= 0 then
+    iconSize = anchor:GetHeight() or 37
+  end
+
+  local borderSize = iconSize * Util.GetIconBorderScale()
+  border:ClearAllPoints()
+  border:SetSize(borderSize, borderSize)
+  border:SetPoint("CENTER", anchor, "CENTER")
+
+  if border.teaBorderColor and border.SetVertexColor then
+    border:SetVertexColor(border.teaBorderColor[1], border.teaBorderColor[2], border.teaBorderColor[3], border.teaBorderColor[4] or 1)
+  end
+end
+
+function Util.EnsureRoundedIconBorder(button, storageKey, drawLayer, drawSubLevel)
+  if not button then
+    return nil
+  end
+
+  local existing = button[storageKey]
+  if existing then
+    if existing.SetVertexColor then
+      return existing
+    end
+
+    existing:Hide()
+    existing:SetParent(nil)
+    button[storageKey] = nil
+  end
+
+  local anchor = button.icon or button
+  local border = button:CreateTexture(nil, drawLayer or "OVERLAY", nil, drawSubLevel or 2)
+  border:SetTexture(BORDER_TEXTURE)
+  ApplyRoundedIconBorderLayout(border, anchor)
+  border:Hide()
+  button[storageKey] = border
+  return border
+end
+
+function Util.LayoutRoundedIconBorder(button, storageKey, scale)
+  if not button or not button[storageKey] then
+    return
+  end
+
+  local anchor = button.icon or button
+  ApplyRoundedIconBorderLayout(button[storageKey], anchor)
+end
+
+function Util.SetRoundedIconBorderColor(border, r, g, b, show)
+  if not border then
+    return
+  end
+
+  if show and r and border.SetVertexColor then
+    border.teaBorderColor = { r, g, b, 1 }
+    border:SetVertexColor(r, g, b, 1)
+    border:Show()
+  else
+    border.teaBorderColor = nil
+    border:Hide()
+  end
+end
+
 Tea_Util = Util

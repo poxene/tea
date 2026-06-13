@@ -7,7 +7,8 @@ local CONTENT_TOP = 68
 local SIDE_OFFSET = 12
 local MONEY_BAR_HEIGHT = 28
 local BOTTOM_PADDING = 14
-local ITEM_QUALITY_COMMON = (Enum and Enum.ItemQuality and (Enum.ItemQuality.Common or Enum.ItemQuality.Standard)) or 1
+local BASE_SLOT_SIZE = 37
+local GetItemQualityColor = (C_Item and C_Item.GetItemQualityColor) or _G.GetItemQualityColor
 local HIGHLIGHT_R, HIGHLIGHT_G, HIGHLIGHT_B = 0.45, 0.65, 0.88
 local HIGHLIGHT_BAG_R, HIGHLIGHT_BAG_G, HIGHLIGHT_BAG_B = 0.58, 0.78, 0.98
 local HIGHLIGHT_BAG_ALPHA = 0.58
@@ -52,7 +53,7 @@ local function GetSlotSize()
 end
 
 local function GetSlotPadding()
-  return GetBagSettings().slotPadding or 4
+  return GetBagSettings().slotPadding or 2
 end
 
 local function GetGridWidth()
@@ -92,6 +93,100 @@ local function GetBagIconTexture(bagID)
   if bagID == BACKPACK_CONTAINER then
     return "Interface\\Buttons\\Button-Backpack-Up"
   end
+end
+
+local function ScaleTextureToSlot(texture, slotSize, point, relativeTo, relativePoint, offsetX, offsetY)
+  if not texture then
+    return
+  end
+
+  texture:ClearAllPoints()
+  texture:SetSize(slotSize, slotSize)
+  texture:SetPoint(point or "CENTER", relativeTo or texture:GetParent(), relativePoint or "CENTER", offsetX or 0, offsetY or 0)
+end
+
+local function GetButtonNormalTexture(button)
+  if button.NormalTexture then
+    return button.NormalTexture
+  end
+  if button.GetNormalTexture then
+    return button:GetNormalTexture()
+  end
+end
+
+local function HideEmptySlotArt(button)
+  local normal = GetButtonNormalTexture(button)
+  if normal then
+    normal:Hide()
+  end
+  if button.ExtendedSlot then
+    button.ExtendedSlot:Hide()
+  end
+  if button.IconOverlay then
+    button.IconOverlay:Hide()
+  end
+end
+
+local function SetupSlotHover(button)
+  local anchor = button.icon or button
+
+  local highlight = button.GetHighlightTexture and button:GetHighlightTexture()
+  if highlight then
+    highlight:ClearAllPoints()
+    highlight:SetAllPoints(anchor)
+  end
+
+  local pushed = button.GetPushedTexture and button:GetPushedTexture()
+  if pushed then
+    pushed:ClearAllPoints()
+    pushed:SetAllPoints(anchor)
+  end
+end
+
+local function ApplySlotButtonSize(button, slotSize)
+  if not button then
+    return
+  end
+
+  button:SetSize(slotSize, slotSize)
+  local scale = slotSize / BASE_SLOT_SIZE
+
+  ScaleTextureToSlot(button.icon, slotSize)
+
+  if button.IconBorder then
+    button.IconBorder:Hide()
+  end
+
+  ScaleTextureToSlot(button.ExtendedOverlay, slotSize, "CENTER", button, "CENTER", 0, -scale)
+  ScaleTextureToSlot(button.ExtendedOverlay2, slotSize, "CENTER", button, "CENTER", 0, -scale)
+
+  if button.IconQuestTexture then
+    ScaleTextureToSlot(button.IconQuestTexture, slotSize, "TOP", button, "TOP", 0, 0)
+  end
+
+  HideEmptySlotArt(button)
+  SetupSlotHover(button)
+
+  if button.Cooldown then
+    button.Cooldown:ClearAllPoints()
+    button.Cooldown:SetSize(slotSize - 2, slotSize - 2)
+    button.Cooldown:SetPoint("CENTER", button, "CENTER")
+  end
+
+  if button.Count then
+    button.Count:ClearAllPoints()
+    button.Count:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -3 * scale, 2 * scale)
+  end
+
+  if button.TeaBagHighlight then
+    local anchor = button.icon or button
+    button.TeaBagHighlight:ClearAllPoints()
+    button.TeaBagHighlight:SetPoint("TOPLEFT", anchor, "TOPLEFT", -2 * scale, 2 * scale)
+    button.TeaBagHighlight:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", 2 * scale, -2 * scale)
+  end
+
+  Tea_Util.LayoutRoundedIconBorder(button, "TeaQualityBorder", scale)
+  Tea_Util.LayoutRoundedIconBorder(button, "TeaTrackBorder", scale)
 end
 
 local function EnsureSlotHighlight(button)
@@ -276,6 +371,32 @@ local function GetBagContainer(bagID)
   return bagContainers[bagID]
 end
 
+local function EnsureQualityBorder(button)
+  Tea_Util.EnsureRoundedIconBorder(button, "TeaQualityBorder", "OVERLAY", 2)
+end
+
+local function ApplySlotQualityBorder(button, quality, hasItem)
+  EnsureQualityBorder(button)
+
+  if button.IconBorder then
+    button.IconBorder:Hide()
+  end
+
+  if not hasItem then
+    Tea_Util.SetRoundedIconBorderColor(button.TeaQualityBorder, nil, nil, nil, false)
+    return
+  end
+
+  local r, g, b
+  if quality and BAG_ITEM_QUALITY_COLORS and BAG_ITEM_QUALITY_COLORS[quality] then
+    r, g, b = BAG_ITEM_QUALITY_COLORS[quality].r, BAG_ITEM_QUALITY_COLORS[quality].g, BAG_ITEM_QUALITY_COLORS[quality].b
+  elseif quality and GetItemQualityColor then
+    r, g, b = GetItemQualityColor(quality)
+  end
+
+  Tea_Util.SetRoundedIconBorderColor(button.TeaQualityBorder, r, g, b, r ~= nil)
+end
+
 local function UpdateSlot(button)
   local bag, slot = button.bagID, button.slotID
   local texture, count, locked, quality, _, _, hyperlink, _, _, itemID = Tea_Util.GetContainerItemInfo(bag, slot)
@@ -293,26 +414,18 @@ local function UpdateSlot(button)
     if button.icon then
       button.icon:Show()
     end
-    if SetItemButtonQuality then
-      SetItemButtonQuality(button, quality, hyperlink)
-    end
-    if button.IconBorder and (not quality or quality <= ITEM_QUALITY_COMMON) then
-      button.IconBorder:Hide()
-    end
   else
     SetItemButtonTexture(button, nil)
     SetItemButtonCount(button, 0)
-    if button.IconBorder then
-      button.IconBorder:Hide()
-    end
     if button.icon then
       button.icon:Hide()
     end
-    if SetItemButtonQuality then
-      SetItemButtonQuality(button, ITEM_QUALITY_COMMON, nil)
-    end
     itemID = nil
+    quality = nil
   end
+
+  HideEmptySlotArt(button)
+  SetupSlotHover(button)
 
   if button.Cooldown then
     local start, duration, enable
@@ -324,11 +437,13 @@ local function UpdateSlot(button)
     CooldownFrame_Set(button.Cooldown, start, duration, enable)
   end
 
+  UpdateSlotHighlight(button)
+  ApplySlotButtonSize(button, GetSlotSize())
+  ApplySlotQualityBorder(button, quality, texture ~= nil)
+
   if Tea_UpdateTrackBorder then
     Tea_UpdateTrackBorder(button, itemID)
   end
-
-  UpdateSlotHighlight(button)
 end
 
 local function RefreshEquippedBags()
@@ -410,7 +525,16 @@ end
 
 local function CreateSlotButton(index, bagID)
   local button = CreateFrame("Button", "TeaBagSlot" .. index, GetBagContainer(bagID), "ContainerFrameItemButtonTemplate")
-  button:SetSize(GetSlotSize(), GetSlotSize())
+
+  local normal = GetButtonNormalTexture(button)
+  if normal then
+    normal:SetTexture(nil)
+    normal:Hide()
+  end
+
+  HideEmptySlotArt(button)
+  SetupSlotHover(button)
+  ApplySlotButtonSize(button, GetSlotSize())
   button:RegisterForDrag("LeftButton")
 
   function button:GetBagID()
@@ -562,7 +686,6 @@ local function LayoutSlots()
       button.bagID = slotInfo.bag
       button.slotID = slotInfo.slot
       button:SetID(slotInfo.slot)
-      button:SetSize(slotSize, slotSize)
       button:Show()
 
       local col = (slotIndex - 1) % columns

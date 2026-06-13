@@ -1,5 +1,3 @@
-local BORDER_SIZE = 2
-
 local function IsEnabled()
   return Tea_GetDB().modules.itemTrack
 end
@@ -11,35 +9,14 @@ local function ApplyBorder(button, itemID)
 
   if IsEnabled() and itemID and Tea_IsTracked(itemID) then
     local r, g, b = Tea_GetTrackColor()
-    if button.TeaTrackBorder.SetBackdropBorderColor then
-      button.TeaTrackBorder:SetBackdropBorderColor(r, g, b, 1)
-    end
-    button.TeaTrackBorder:Show()
+    Tea_Util.SetRoundedIconBorderColor(button.TeaTrackBorder, r, g, b, true)
   else
-    button.TeaTrackBorder:Hide()
+    Tea_Util.SetRoundedIconBorderColor(button.TeaTrackBorder, nil, nil, nil, false)
   end
 end
 
 function Tea_EnsureTrackBorder(button)
-  if not button or button.TeaTrackBorder then
-    return
-  end
-
-  local anchor = button.icon or button
-  local border = CreateFrame("Frame", nil, button, BackdropTemplateMixin and "BackdropTemplate")
-  border:SetFrameLevel(button:GetFrameLevel() + 5)
-  border:SetPoint("TOPLEFT", anchor, "TOPLEFT", -1, 1)
-  border:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", 1, -1)
-
-  if border.SetBackdrop then
-    border:SetBackdrop({
-      edgeFile = "Interface\\Buttons\\WHITE8x8",
-      edgeSize = BORDER_SIZE,
-    })
-  end
-
-  border:Hide()
-  button.TeaTrackBorder = border
+  Tea_Util.EnsureRoundedIconBorder(button, "TeaTrackBorder", "OVERLAY", 5)
 end
 
 function Tea_UpdateTrackBorder(button, itemID)
