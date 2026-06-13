@@ -1,0 +1,32 @@
+{
+  "Lua.runtime.version": "Lua 5.1",
+  "Lua.diagnostics.globals": [
+    "SlashCmdList",
+    "SLASH_TEA1",
+    "TeaDB",
+    "Tea_GetDB",
+    "Tea_Print",
+    "Tea_FormatMoney",
+    "Tea_Util",
+    "Tea_SellGreyItems",
+    "Tea_ToggleOptions",
+    "Tea_ShowOptions",
+    "Tea_IsTracked",
+    "Tea_TrackItem",
+    "Tea_UntrackItem",
+    "Tea_GetTrackedItemIDs",
+    "Tea_GetTrackColor",
+    "Tea_RefreshTrackHighlights",
+    "Tea_RefreshTrackOptions",
+    "Tea_EnsureTrackBorder",
+    "Tea_UpdateTrackBorder",
+    "Tea_ToggleBag",
+    "Tea_OpenBag",
+    "Tea_CloseBag",
+    "Tea_BagIsOpen",
+    "Tea_BagRefreshTracks"
+  ],
+  "files.associations": {
+    "*.toc": "ini"
+  }
+}

@@ -1,0 +1,18 @@
+## Interface: 11508
+## Title: tea
+## Notes: Quality-of-life addon for WoW Classic Era.
+## Version: 0.5.0
+## Author: tea
+## SavedVariables: TeaDB
+
+Core/Util.lua
+Core/Config.lua
+Core/Track.lua
+Core/Options.lua
+Modules/TooltipExtras.lua
+Modules/VendorTrash.lua
+Modules/RepairWarning.lua
+Modules/ItemTrack.lua
+Modules/OneBag.lua
+Core/Slash.lua
+Core/Init.lua
