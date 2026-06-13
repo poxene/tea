@@ -11,7 +11,7 @@ local function ShouldShow()
   return true
 end
 
-local function GetTooltipStackCount(tooltip, link)
+local function GetTooltipStackCount(tooltip)
   local owner = tooltip:GetOwner()
   if owner and owner.GetBagID then
     local bag = owner:GetBagID()
@@ -26,6 +26,13 @@ local function GetTooltipStackCount(tooltip, link)
   return 1
 end
 
+local function GetEquipSlotLabel(equipLoc)
+  if not equipLoc or equipLoc == "" then
+    return nil
+  end
+  return _G[equipLoc] or equipLoc
+end
+
 local function AddTooltipLines(tooltip)
   if not ShouldShow() then
     return
@@ -38,8 +45,13 @@ local function AddTooltipLines(tooltip)
 
   local db = Tea_GetDB()
   local itemID = Tea_Util.GetItemInfoInstant(link)
-  local sellPrice = select(11, Tea_Util.GetItemInfo(link))
-  local count = GetTooltipStackCount(tooltip, link)
+  local _, _, _, itemLevel, requiredLevel, itemType, itemSubType, maxStack, equipLoc, _, sellPrice =
+    Tea_Util.GetItemInfo(link)
+  local count = GetTooltipStackCount(tooltip)
+
+  if db.tooltip.showTracked and itemID and Tea_IsTracked and Tea_IsTracked(itemID) then
+    tooltip:AddLine("Tracked", 0.2, 0.85, 1)
+  end
 
   if db.tooltip.showVendorPrice and sellPrice and sellPrice > 0 then
     local total = sellPrice * count
@@ -51,6 +63,33 @@ local function AddTooltipLines(tooltip)
     else
       tooltip:AddLine("Vendor: " .. Tea_FormatMoney(sellPrice), 1, 1, 1)
     end
+  end
+
+  if db.tooltip.showItemLevel and itemLevel and itemLevel > 0 then
+    tooltip:AddLine("Item Level: " .. itemLevel, 1, 1, 1)
+  end
+
+  if db.tooltip.showRequiredLevel and requiredLevel and requiredLevel > 0 then
+    tooltip:AddLine("Requires Level " .. requiredLevel, 1, 0.82, 0)
+  end
+
+  if db.tooltip.showEquipSlot then
+    local slotLabel = GetEquipSlotLabel(equipLoc)
+    if slotLabel then
+      tooltip:AddLine(slotLabel, 1, 1, 1)
+    end
+  end
+
+  if db.tooltip.showItemType and itemType and itemType ~= "" then
+    if itemSubType and itemSubType ~= "" then
+      tooltip:AddLine(itemType .. " - " .. itemSubType, 1, 1, 1)
+    else
+      tooltip:AddLine(itemType, 1, 1, 1)
+    end
+  end
+
+  if db.tooltip.showMaxStack and maxStack and maxStack > 1 then
+    tooltip:AddLine("Max stack: " .. maxStack, 1, 1, 1)
   end
 
   if db.tooltip.showItemId and itemID then

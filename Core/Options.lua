@@ -13,7 +13,6 @@ local TABS = {
     id = "general",
     label = "General",
     options = {
-      { label = "Tooltip extras", path = { "modules", "tooltipExtras" } },
       { label = "Auto-sell grey at vendors", path = { "modules", "vendorTrash" } },
       { label = "Repair warning at vendors", path = { "modules", "repairWarning" } },
       {
@@ -36,24 +35,22 @@ local TABS = {
           end
         end,
       },
-      {
-        label = "Floating health and power bars",
-        path = { "modules", "resourceBars" },
-        onChange = function()
-          if Tea_RefreshResourceBars then
-            Tea_RefreshResourceBars()
-          end
-        end,
-      },
     },
   },
   {
     id = "tooltip",
     label = "Tooltip",
     options = {
-      { label = "Show vendor price", path = { "tooltip", "showVendorPrice" } },
-      { label = "Show item ID", path = { "tooltip", "showItemId" } },
-      { label = "Only enabled while holding Shift", path = { "tooltip", "requireShift" } },
+      { label = "Enable", path = { "modules", "tooltipExtras" } },
+      { label = "Only while holding Shift", path = { "tooltip", "requireShift" } },
+      { label = "Vendor price", path = { "tooltip", "showVendorPrice" } },
+      { label = "Item ID", path = { "tooltip", "showItemId" } },
+      { label = "Item level", path = { "tooltip", "showItemLevel" } },
+      { label = "Required level", path = { "tooltip", "showRequiredLevel" } },
+      { label = "Equipment slot", path = { "tooltip", "showEquipSlot" } },
+      { label = "Item type", path = { "tooltip", "showItemType" } },
+      { label = "Max stack size", path = { "tooltip", "showMaxStack" } },
+      { label = "Tracked item marker", path = { "tooltip", "showTracked" } },
     },
   },
   {
@@ -63,6 +60,30 @@ local TABS = {
   {
     id = "oneBag",
     label = "teaBag",
+  },
+  {
+    id = "bars",
+    label = "Bars",
+    options = {
+      {
+        label = "Enable",
+        path = { "modules", "resourceBars" },
+        onChange = function()
+          if Tea_RefreshResourceBars then
+            Tea_RefreshResourceBars()
+          end
+        end,
+      },
+      {
+        label = "Lock position and size",
+        path = { "resourceBars", "locked" },
+        onChange = function()
+          if Tea_RefreshResourceBars then
+            Tea_RefreshResourceBars()
+          end
+        end,
+      },
+    },
   },
 }
 

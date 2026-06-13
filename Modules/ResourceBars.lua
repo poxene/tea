@@ -14,6 +14,34 @@ local healthText
 local powerBar
 local powerText
 local resizeGrip
+local updateElapsed = 0
+local UPDATE_INTERVAL = 0.1
+
+local PLAYER_UNIT_EVENTS = {
+  "UNIT_HEALTH",
+  "UNIT_MAXHEALTH",
+  "UNIT_POWER_UPDATE",
+  "UNIT_MAXPOWER",
+  "UNIT_DISPLAYPOWER_CHANGED",
+}
+
+local function RegisterPlayerUnitEvents(targetFrame)
+  for _, event in ipairs(PLAYER_UNIT_EVENTS) do
+    if targetFrame.RegisterUnitEvent then
+      targetFrame:RegisterUnitEvent(event, "player")
+    else
+      targetFrame:RegisterEvent(event)
+    end
+  end
+
+  if targetFrame.RegisterUnitEvent then
+    pcall(targetFrame.RegisterUnitEvent, targetFrame, "UNIT_POWER_FREQUENT", "player")
+  end
+end
+
+local function ShouldHandleUnitEvent(unit)
+  return not unit or unit == "player"
+end
 
 local function IsEnabled()
   return Tea_GetDB().modules.resourceBars
@@ -34,7 +62,7 @@ local function Clamp(value, minValue, maxValue)
 end
 
 local function SaveFrameSettings()
-  if not frame then
+  if not frame or IsLocked() then
     return
   end
 
@@ -88,6 +116,17 @@ local function PlayerUsesPowerBar()
   return maxPower > 0
 end
 
+local function IsLocked()
+  return GetSettings().locked == true
+end
+
+local function GetGripInset()
+  if IsLocked() or not resizeGrip or not resizeGrip:IsShown() then
+    return 0
+  end
+  return RESIZE_GRIP_SIZE / 2
+end
+
 local function ApplyLayout()
   if not frame or not healthBar or not powerBar then
     return
@@ -97,6 +136,7 @@ local function ApplyLayout()
   local height = frame:GetHeight()
   local showPower = PlayerUsesPowerBar()
   local barHeight
+  local gripInset = GetGripInset()
 
   powerBar:SetShown(showPower)
   powerText:SetShown(showPower)
@@ -105,7 +145,7 @@ local function ApplyLayout()
     barHeight = (height - BAR_GAP) / 2
     healthBar:ClearAllPoints()
     healthBar:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
-    healthBar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -RESIZE_GRIP_SIZE / 2, 0)
+    healthBar:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -gripInset, 0)
     healthBar:SetHeight(barHeight)
 
     powerBar:ClearAllPoints()
@@ -115,11 +155,65 @@ local function ApplyLayout()
   else
     healthBar:ClearAllPoints()
     healthBar:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
-    healthBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -RESIZE_GRIP_SIZE / 2, RESIZE_GRIP_SIZE / 2)
+    healthBar:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -gripInset, gripInset)
   end
 
-  healthText:SetWidth(width - TEXT_PADDING * 2 - RESIZE_GRIP_SIZE)
-  powerText:SetWidth(width - TEXT_PADDING * 2 - RESIZE_GRIP_SIZE)
+  healthText:SetWidth(width - TEXT_PADDING * 2 - gripInset * 2)
+  powerText:SetWidth(width - TEXT_PADDING * 2 - gripInset * 2)
+end
+
+local function ShowFrameTooltip()
+  GameTooltip:SetOwner(frame, "ANCHOR_RIGHT")
+  GameTooltip:SetText("tea resource bars")
+  GameTooltip:AddLine("Drag to move.", 0.9, 0.9, 0.9)
+  GameTooltip:AddLine("Use the corner grip to resize.", 0.9, 0.9, 0.9)
+  GameTooltip:Show()
+end
+
+local function ShowGripTooltip()
+  GameTooltip:SetOwner(resizeGrip, "ANCHOR_RIGHT")
+  GameTooltip:SetText("Drag to resize")
+  GameTooltip:Show()
+end
+
+local function ApplyLockState()
+  if not frame or not resizeGrip then
+    return
+  end
+
+  local locked = IsLocked()
+
+  frame:SetMovable(not locked)
+  frame:SetResizable(not locked)
+
+  if locked then
+    frame:RegisterForDrag()
+    frame:EnableMouse(false)
+    resizeGrip:Hide()
+    frame:SetScript("OnEnter", nil)
+    frame:SetScript("OnLeave", nil)
+    resizeGrip:SetScript("OnEnter", nil)
+    resizeGrip:SetScript("OnLeave", nil)
+    resizeGrip:SetScript("OnMouseDown", nil)
+    resizeGrip:SetScript("OnMouseUp", nil)
+  else
+    frame:RegisterForDrag("LeftButton")
+    frame:EnableMouse(true)
+    resizeGrip:Show()
+    frame:SetScript("OnEnter", ShowFrameTooltip)
+    frame:SetScript("OnLeave", GameTooltip_Hide)
+    resizeGrip:SetScript("OnEnter", ShowGripTooltip)
+    resizeGrip:SetScript("OnLeave", GameTooltip_Hide)
+    resizeGrip:SetScript("OnMouseDown", function()
+      frame:StartSizing("BOTTOMRIGHT")
+    end)
+    resizeGrip:SetScript("OnMouseUp", function()
+      frame:StopMovingOrSizing()
+      SaveFrameSettings()
+    end)
+  end
+
+  ApplyLayout()
 end
 
 local function UpdateBars()
@@ -219,6 +313,9 @@ local function CreateBars()
   grip:SetTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up")
 
   frame:SetScript("OnDragStart", function(self)
+    if IsLocked() then
+      return
+    end
     self:StartMoving()
   end)
   frame:SetScript("OnDragStop", function(self)
@@ -226,39 +323,27 @@ local function CreateBars()
     SaveFrameSettings()
   end)
   frame:SetScript("OnSizeChanged", function()
+    if IsLocked() then
+      return
+    end
     ApplyLayout()
     SaveFrameSettings()
     UpdateBars()
   end)
+  frame:SetScript("OnUpdate", function(self, elapsed)
+    if not self:IsShown() then
+      return
+    end
 
-  resizeGrip:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:SetText("Drag to resize")
-    GameTooltip:Show()
-  end)
-  resizeGrip:SetScript("OnLeave", function()
-    GameTooltip:Hide()
-  end)
-  resizeGrip:SetScript("OnMouseDown", function()
-    frame:StartSizing("BOTTOMRIGHT")
-  end)
-  resizeGrip:SetScript("OnMouseUp", function()
-    frame:StopMovingOrSizing()
-    SaveFrameSettings()
-  end)
-
-  frame:SetScript("OnEnter", function(self)
-    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
-    GameTooltip:SetText("tea resource bars")
-    GameTooltip:AddLine("Drag to move.", 0.9, 0.9, 0.9)
-    GameTooltip:AddLine("Use the corner grip to resize.", 0.9, 0.9, 0.9)
-    GameTooltip:Show()
-  end)
-  frame:SetScript("OnLeave", function()
-    GameTooltip:Hide()
+    updateElapsed = updateElapsed + elapsed
+    if updateElapsed >= UPDATE_INTERVAL then
+      updateElapsed = 0
+      UpdateBars()
+    end
   end)
 
   ApplyFrameSettings()
+  ApplyLockState()
 end
 
 function Tea_RefreshResourceBars()
@@ -271,7 +356,20 @@ function Tea_RefreshResourceBars()
 
   CreateBars()
   ApplyFrameSettings()
+  ApplyLockState()
   frame:Show()
+  updateElapsed = 0
+  UpdateBars()
+end
+
+local function OnPlayerResourceEvent()
+  if not IsEnabled() or not frame or not frame:IsShown() or not powerBar then
+    return
+  end
+
+  if PlayerUsesPowerBar() ~= powerBar:IsShown() then
+    ApplyLayout()
+  end
   UpdateBars()
 end
 
@@ -279,11 +377,7 @@ local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("ADDON_LOADED")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-eventFrame:RegisterEvent("UNIT_HEALTH")
-eventFrame:RegisterEvent("UNIT_MAXHEALTH")
-eventFrame:RegisterEvent("UNIT_POWER_UPDATE")
-eventFrame:RegisterEvent("UNIT_MAXPOWER")
-eventFrame:RegisterEvent("UNIT_DISPLAYPOWER_CHANGED")
+RegisterPlayerUnitEvents(eventFrame)
 
 eventFrame:SetScript("OnEvent", function(_, event, arg1)
   if event == "ADDON_LOADED" and arg1 == ADDON_NAME then
@@ -295,19 +389,9 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
     return
   end
 
-  if arg1 and arg1 ~= "player" then
+  if not ShouldHandleUnitEvent(arg1) then
     return
   end
 
-  if event == "UNIT_HEALTH"
-    or event == "UNIT_MAXHEALTH"
-    or event == "UNIT_POWER_UPDATE"
-    or event == "UNIT_MAXPOWER"
-    or event == "UNIT_DISPLAYPOWER_CHANGED"
-  then
-    if PlayerUsesPowerBar() ~= powerBar:IsShown() then
-      ApplyLayout()
-    end
-    UpdateBars()
-  end
+  OnPlayerResourceEvent()
 end)

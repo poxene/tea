@@ -12,6 +12,12 @@ local defaults = {
   tooltip = {
     showVendorPrice = true,
     showItemId = true,
+    showItemLevel = false,
+    showRequiredLevel = false,
+    showEquipSlot = false,
+    showItemType = false,
+    showMaxStack = false,
+    showTracked = true,
     requireShift = false,
   },
   trackedItems = {},
@@ -37,6 +43,7 @@ local defaults = {
     relativePoint = "CENTER",
     x = -320,
     y = -180,
+    locked = false,
   },
 }
 
