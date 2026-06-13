@@ -1,6 +1,3 @@
-local SLOT_SIZE = 37
-local SLOT_PADDING = 4
-local COLUMNS = 8
 local HEADER_HEIGHT = 20
 local SECTION_GAP = 10
 local BAG_BAR_HEIGHT = 30
@@ -8,6 +5,8 @@ local BAG_ICON_SIZE = 28
 local BAG_ICON_GAP = 6
 local CONTENT_TOP = 68
 local SIDE_OFFSET = 12
+local MONEY_BAR_HEIGHT = 28
+local BOTTOM_PADDING = 14
 local ITEM_QUALITY_COMMON = (Enum and Enum.ItemQuality and (Enum.ItemQuality.Common or Enum.ItemQuality.Standard)) or 1
 local HIGHLIGHT_R, HIGHLIGHT_G, HIGHLIGHT_B = 0.45, 0.65, 0.88
 local HIGHLIGHT_BAG_R, HIGHLIGHT_BAG_G, HIGHLIGHT_BAG_B = 0.58, 0.78, 0.98
@@ -24,6 +23,7 @@ local SECTION_DEFS = {
 
 local frame
 local bagBarFrame
+local moneyFrame
 local slotButtons = {}
 local equippedBagButtons = {}
 local bagContainers = {}
@@ -33,9 +33,33 @@ local highlightBagSlots = false
 local highlightLeaveToken = 0
 local lastSlotCount = 0
 local lastLayoutKey = ""
+local lastSettingsKey = ""
 
 local function IsEnabled()
   return Tea_GetDB().modules.oneBag
+end
+
+local function GetBagSettings()
+  return Tea_GetDB().oneBag
+end
+
+local function GetColumns()
+  return GetBagSettings().columns or 8
+end
+
+local function GetSlotSize()
+  return GetBagSettings().slotSize or 37
+end
+
+local function GetSlotPadding()
+  return GetBagSettings().slotPadding or 4
+end
+
+local function GetGridWidth()
+  local columns = GetColumns()
+  local slotSize = GetSlotSize()
+  local slotPadding = GetSlotPadding()
+  return columns * (slotSize + slotPadding) + slotPadding
 end
 
 local function GetBagInventorySlot(bagID)
@@ -238,6 +262,10 @@ local function GetBagSlots()
   return slots
 end
 
+local function GetSettingsKey()
+  return string.format("%d:%d:%d", GetColumns(), GetSlotSize(), GetSlotPadding())
+end
+
 local function GetBagContainer(bagID)
   if not bagContainers[bagID] then
     local container = CreateFrame("Frame", "TeaBagContainer" .. bagID, frame)
@@ -328,6 +356,7 @@ local function RefreshBag()
 
   UpdateSlotHighlights()
   UpdateEquippedBagHighlights()
+  UpdateMoney()
 end
 
 function Tea_BagRefreshTracks()
@@ -381,7 +410,7 @@ end
 
 local function CreateSlotButton(index, bagID)
   local button = CreateFrame("Button", "TeaBagSlot" .. index, GetBagContainer(bagID), "ContainerFrameItemButtonTemplate")
-  button:SetSize(SLOT_SIZE, SLOT_SIZE)
+  button:SetSize(GetSlotSize(), GetSlotSize())
   button:RegisterForDrag("LeftButton")
 
   function button:GetBagID()
@@ -490,9 +519,22 @@ local function GetOrCreateHeader(index, title)
   return header
 end
 
+local function UpdateMoney()
+  if not moneyFrame then
+    return
+  end
+
+  if MoneyFrame_Update then
+    MoneyFrame_Update(moneyFrame:GetName(), GetMoney())
+  end
+end
+
 local function LayoutSlots()
   local sections = GetBagSections()
-  local gridWidth = COLUMNS * (SLOT_SIZE + SLOT_PADDING) + SLOT_PADDING
+  local columns = GetColumns()
+  local slotSize = GetSlotSize()
+  local slotPadding = GetSlotPadding()
+  local gridWidth = GetGridWidth()
   local y = -CONTENT_TOP
   local buttonIndex = 0
   local headerIndex = 0
@@ -520,35 +562,38 @@ local function LayoutSlots()
       button.bagID = slotInfo.bag
       button.slotID = slotInfo.slot
       button:SetID(slotInfo.slot)
+      button:SetSize(slotSize, slotSize)
       button:Show()
 
-      local col = (slotIndex - 1) % COLUMNS
-      local row = math.floor((slotIndex - 1) / COLUMNS)
+      local col = (slotIndex - 1) % columns
+      local row = math.floor((slotIndex - 1) / columns)
       button:ClearAllPoints()
       button:SetPoint(
         "TOPLEFT",
         frame,
         "TOPLEFT",
-        SIDE_OFFSET + SLOT_PADDING + col * (SLOT_SIZE + SLOT_PADDING),
-        y - SLOT_PADDING - row * (SLOT_SIZE + SLOT_PADDING)
+        SIDE_OFFSET + slotPadding + col * (slotSize + slotPadding),
+        y - slotPadding - row * (slotSize + slotPadding)
       )
 
       UpdateSlot(button)
     end
 
-    local rows = math.ceil(#section.slots / COLUMNS)
-    y = y - rows * (SLOT_SIZE + SLOT_PADDING) - SLOT_PADDING - SECTION_GAP
+    local rows = math.ceil(#section.slots / columns)
+    y = y - rows * (slotSize + slotPadding) - slotPadding - SECTION_GAP
   end
 
   for index = buttonIndex + 1, #slotButtons do
     slotButtons[index]:Hide()
   end
 
-  frame:SetSize(gridWidth + 24, math.abs(y) + 24)
+  frame:SetSize(gridWidth + 24, math.abs(y) + MONEY_BAR_HEIGHT + BOTTOM_PADDING)
   lastSlotCount = #GetBagSlots()
   lastLayoutKey = GetLayoutKey()
+  lastSettingsKey = GetSettingsKey()
   UpdateSlotHighlights()
   UpdateEquippedBagHighlights()
+  UpdateMoney()
 end
 
 local function BuildFrame()
@@ -589,7 +634,27 @@ local function BuildFrame()
     Tea_CloseBag()
   end)
 
+  moneyFrame = CreateFrame("Frame", "TeaBagMoneyFrame", frame, "SmallMoneyFrameTemplate")
+  moneyFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, 10)
+  if SmallMoneyFrame_OnLoad then
+    SmallMoneyFrame_OnLoad(moneyFrame)
+  end
+  if MoneyFrame_SetType then
+    MoneyFrame_SetType(moneyFrame, "PLAYER")
+  end
+
   LayoutSlots()
+end
+
+function Tea_BagRelayout()
+  if not frame then
+    return
+  end
+
+  LayoutSlots()
+  if frame:IsShown() then
+    RefreshBag()
+  end
 end
 
 local function CloseBlizzardBags()
@@ -623,6 +688,7 @@ function Tea_OpenBag()
   end
 
   LayoutSlots()
+  UpdateMoney()
   CloseBlizzardBags()
   frame:Show()
 end
@@ -649,7 +715,8 @@ local function OnBagUpdate()
 
   local slotCount = #GetBagSlots()
   local layoutKey = GetLayoutKey()
-  if slotCount ~= lastSlotCount or layoutKey ~= lastLayoutKey then
+  local settingsKey = GetSettingsKey()
+  if slotCount ~= lastSlotCount or layoutKey ~= lastLayoutKey or settingsKey ~= lastSettingsKey then
     LayoutSlots()
   else
     RefreshBag()
@@ -659,10 +726,13 @@ end
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("BAG_UPDATE_DELAYED")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
+eventFrame:RegisterEvent("PLAYER_MONEY")
 
 eventFrame:SetScript("OnEvent", function(_, event)
   if event == "BAG_UPDATE_DELAYED" then
     OnBagUpdate()
+  elseif event == "PLAYER_MONEY" then
+    UpdateMoney()
   elseif event == "PLAYER_LOGIN" then
     local origToggleBackpack = ToggleBackpack
     ToggleBackpack = function()

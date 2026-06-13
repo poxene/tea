@@ -25,7 +25,6 @@ local TABS = {
           end
         end,
       },
-      { label = "One bag", path = { "modules", "oneBag" } },
     },
   },
   {
@@ -41,14 +40,20 @@ local TABS = {
     id = "tracking",
     label = "Track",
   },
+  {
+    id = "oneBag",
+    label = "teaBag",
+  },
 }
 
 local frame
+local tabContainer
 local tabButtons = {}
 local tabPanels = {}
 local checkboxes = {}
 local trackListFrame
 local trackEditBox
+local oneBagSliders = {}
 local activeTab = 1
 
 local function GetOptionValue(path)
@@ -66,6 +71,23 @@ local function SetOptionValue(path, checked)
     node = node[path[i]]
   end
   node[path[#path]] = checked
+end
+
+local function GetNumericOptionValue(path)
+  local value = Tea_GetDB()
+  for i = 1, #path do
+    value = value[path[i]]
+  end
+  return value
+end
+
+local function SetNumericOptionValue(path, value)
+  local db = Tea_GetDB()
+  local node = db
+  for i = 1, #path - 1 do
+    node = node[path[i]]
+  end
+  node[path[#path]] = value
 end
 
 local function RefreshCheckboxes()
@@ -180,10 +202,6 @@ local function RefreshTrackList()
   end
 end
 
-function Tea_RefreshTrackOptions()
-  RefreshTrackList()
-end
-
 local function BuildTrackingPanel(panel)
   panel.tabTitle = "Tracked Items"
 
@@ -218,6 +236,124 @@ local function BuildTrackingPanel(panel)
   trackListFrame:SetHeight(180)
 end
 
+function Tea_RefreshTrackOptions()
+  RefreshTrackList()
+end
+
+local function CreateSlider(panel, label, path, minValue, maxValue, step, anchor, yOffset, onChange)
+  local slider = CreateFrame("Slider", "TeaOptionsSlider" .. #oneBagSliders + 1, panel, "OptionsSliderTemplate")
+  slider:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, yOffset)
+  slider:SetPoint("RIGHT", panel, "RIGHT", -24, 0)
+  slider:SetMinMaxValues(minValue, maxValue)
+  slider:SetValueStep(step)
+  slider:SetObeyStepOnDrag(true)
+  slider:SetValue(GetNumericOptionValue(path))
+
+  local sliderName = slider:GetName()
+  local text = _G[sliderName .. "Text"]
+  local low = _G[sliderName .. "Low"]
+  local high = _G[sliderName .. "High"]
+  if text then
+    text:SetText(label)
+  end
+  if low then
+    low:SetText(tostring(minValue))
+  end
+  if high then
+    high:SetText(tostring(maxValue))
+  end
+
+  slider:SetScript("OnValueChanged", function(self, value)
+    value = math.floor(value + 0.5)
+    if value ~= GetNumericOptionValue(path) then
+      SetNumericOptionValue(path, value)
+      if onChange then
+        onChange(value)
+      end
+    end
+  end)
+
+  table.insert(oneBagSliders, { slider = slider, path = path })
+  return slider
+end
+
+local function RefreshOneBagPanel()
+  for _, entry in ipairs(oneBagSliders) do
+    entry.slider:SetValue(GetNumericOptionValue(entry.path))
+  end
+end
+
+local function BuildOneBagPanel(panel)
+  panel.tabTitle = "teaBag"
+
+  local header = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+  header:SetPoint("TOPLEFT", 8, -12)
+  header:SetText("teaBag")
+
+  local enable = CreateCheckbox(panel, "Enable one bag", { "modules", "oneBag" }, header, -12, {
+    onChange = function()
+      if Tea_BagRelayout then
+        Tea_BagRelayout()
+      end
+    end,
+  })
+
+  local columnsHint = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+  columnsHint:SetPoint("TOPLEFT", enable, "BOTTOMLEFT", 0, -14)
+  columnsHint:SetText("Items per row")
+
+  local columnsSlider = CreateSlider(
+    panel,
+    "Columns",
+    { "oneBag", "columns" },
+    4,
+    12,
+    1,
+    columnsHint,
+    -8,
+    function()
+      if Tea_BagRelayout then
+        Tea_BagRelayout()
+      end
+    end
+  )
+
+  local slotHint = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+  slotHint:SetPoint("TOPLEFT", columnsSlider, "BOTTOMLEFT", 0, -18)
+  slotHint:SetText("Slot size")
+
+  CreateSlider(
+    panel,
+    "Slot size",
+    { "oneBag", "slotSize" },
+    28,
+    48,
+    1,
+    slotHint,
+    -8,
+    function()
+      if Tea_BagRelayout then
+        Tea_BagRelayout()
+      end
+    end
+  )
+end
+
+local TAB_PANEL_LEVEL = 5
+local TAB_BAR_LEVEL = 20
+local SELECTED_TAB_LEVEL_OFFSET = 20
+
+local function UpdateTabLevels(selectedIndex)
+  if not tabContainer then
+    return
+  end
+
+  local base = tabContainer:GetFrameLevel()
+  for i, tabButton in ipairs(tabButtons) do
+    tabButton:SetFrameLevel(base + (i == selectedIndex and SELECTED_TAB_LEVEL_OFFSET or i))
+  end
+end
+
 local function SelectTab(index)
   activeTab = index
 
@@ -231,8 +367,12 @@ local function SelectTab(index)
     end
   end
 
+  UpdateTabLevels(index)
+
   if TABS[index].id == "tracking" then
     RefreshTrackList()
+  elseif TABS[index].id == "oneBag" then
+    RefreshOneBagPanel()
   end
 end
 
@@ -253,10 +393,11 @@ local function ResizeTab(tabButton)
 end
 
 local function CreateTabBar()
-  local tabContainer = CreateFrame("Frame", "TeaOptionsTabContainer", frame)
+  tabContainer = CreateFrame("Frame", "TeaOptionsTabContainer", frame)
   tabContainer:SetPoint("TOPLEFT", FRAME_PADDING, TAB_TOP)
   tabContainer:SetPoint("TOPRIGHT", -FRAME_PADDING, TAB_TOP)
   tabContainer:SetHeight(24)
+  tabContainer:SetFrameLevel(TAB_BAR_LEVEL)
 
   for index, tab in ipairs(TABS) do
     local tabButton = CreateFrame("Button", "TeaOptionsTab" .. index, tabContainer, "PanelTopTabButtonTemplate")
@@ -285,6 +426,8 @@ local function RefreshPanel()
   RefreshCheckboxes()
   if TABS[activeTab].id == "tracking" then
     RefreshTrackList()
+  elseif TABS[activeTab].id == "oneBag" then
+    RefreshOneBagPanel()
   end
 end
 
@@ -343,6 +486,7 @@ local function BuildPanel()
     local panel = CreateFrame("Frame", nil, frame)
     panel:SetPoint("TOPLEFT", FRAME_PADDING, CONTENT_TOP)
     panel:SetPoint("BOTTOMRIGHT", -FRAME_PADDING, 36)
+    panel:SetFrameLevel(TAB_PANEL_LEVEL)
     panel:Hide()
 
     local panelBg = panel:CreateTexture(nil, "BACKGROUND")
@@ -361,6 +505,8 @@ local function BuildPanel()
       BuildOptionsPanel(panel, tab.options)
     elseif tab.id == "tracking" then
       BuildTrackingPanel(panel)
+    elseif tab.id == "oneBag" then
+      BuildOneBagPanel(panel)
     end
   end
 

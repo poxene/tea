@@ -19,6 +19,11 @@ local defaults = {
     g = 0.85,
     b = 1.0,
   },
+  oneBag = {
+    columns = 8,
+    slotSize = 37,
+    slotPadding = 4,
+  },
 }
 
 local function ApplyDefaults(target, source)

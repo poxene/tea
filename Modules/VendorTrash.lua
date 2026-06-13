@@ -131,19 +131,58 @@ end
 
 local sellButton
 
+local function UpdateSellButtonVisibility()
+  if not sellButton then
+    return
+  end
+
+  if MerchantFrame:IsShown() and MerchantFrame.selectedTab == 1 then
+    sellButton:Show()
+  else
+    sellButton:Hide()
+  end
+end
+
+local function UpdateSellButtonLayout()
+  if not sellButton or not MerchantMoneyFrame then
+    return
+  end
+
+  sellButton:ClearAllPoints()
+  sellButton:SetPoint("LEFT", MerchantMoneyFrame, "RIGHT", 3, 0)
+
+  if MerchantFrameTab1 then
+    sellButton:SetFrameLevel(MerchantFrameTab1:GetFrameLevel() - 1)
+  end
+
+  UpdateSellButtonVisibility()
+end
+
 local function CreateSellButton()
   if sellButton or not MerchantFrame then
     return
   end
 
   sellButton = CreateFrame("Button", "TeaSellGreyButton", MerchantFrame, "UIPanelButtonTemplate")
-  sellButton:SetSize(72, 22)
-  sellButton:SetText("Sell Grey")
-  sellButton:SetPoint("LEFT", MerchantRepairItemButton, "RIGHT", 6, 0)
+  sellButton:SetSize(34, 28)
+  sellButton:SetText("Sell")
+  sellButton:SetNormalFontObject("GameFontHighlight")
+  sellButton:SetHighlightFontObject("GameFontHighlight")
+
+  local fontString = sellButton:GetFontString()
+  if fontString then
+    fontString:SetTextColor(1, 0.82, 0)
+  end
+
   sellButton:SetScript("OnClick", function()
     Tea_SellGreyItems()
   end)
   sellButton:SetScript("OnEnter", function(self)
+    local label = self:GetFontString()
+    if label then
+      label:SetTextColor(1, 0.82, 0)
+    end
+
     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
     GameTooltip:SetText("Sell grey items")
     local value = GetGreySellValue()
@@ -155,6 +194,12 @@ local function CreateSellButton()
     GameTooltip:Show()
   end)
   sellButton:SetScript("OnLeave", GameTooltip_Hide)
+
+  if MerchantFrame_Update then
+    hooksecurefunc("MerchantFrame_Update", UpdateSellButtonLayout)
+  end
+
+  UpdateSellButtonLayout()
 end
 
 local frame = CreateFrame("Frame")
@@ -170,6 +215,7 @@ frame:SetScript("OnEvent", function(_, event, arg1)
   end
 
   if event == "MERCHANT_SHOW" then
+    UpdateSellButtonLayout()
     C_Timer.After(0.05, ProcessAutoSell)
   elseif event == "MERCHANT_CLOSED" then
     FinishSellMessage()
