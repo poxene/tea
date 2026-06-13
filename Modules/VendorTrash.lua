@@ -149,7 +149,7 @@ local function UpdateSellButtonLayout()
   end
 
   sellButton:ClearAllPoints()
-  sellButton:SetPoint("LEFT", MerchantMoneyFrame, "RIGHT", 3, 0)
+  sellButton:SetPoint("RIGHT", MerchantMoneyFrame, "LEFT", -52, 1)
 
   if MerchantFrameTab1 then
     sellButton:SetFrameLevel(MerchantFrameTab1:GetFrameLevel() - 1)
@@ -164,8 +164,8 @@ local function CreateSellButton()
   end
 
   sellButton = CreateFrame("Button", "TeaSellGreyButton", MerchantFrame, "UIPanelButtonTemplate")
-  sellButton:SetSize(34, 28)
-  sellButton:SetText("Sell")
+  sellButton:SetSize(70, 22)
+  sellButton:SetText("Sell Junk")
   sellButton:SetNormalFontObject("GameFontHighlight")
   sellButton:SetHighlightFontObject("GameFontHighlight")
 
@@ -183,7 +183,7 @@ local function CreateSellButton()
       label:SetTextColor(1, 0.82, 0)
     end
 
-    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
     GameTooltip:SetText("Sell grey items")
     local value = GetGreySellValue()
     if value > 0 then

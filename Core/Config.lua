@@ -25,6 +25,10 @@ local defaults = {
     slotPadding = 2,
     greyJunkIcons = true,
   },
+  minimap = {
+    show = true,
+    angle = 220,
+  },
 }
 
 local ONE_BAG_LAYOUT_VERSION = 1
@@ -53,12 +57,39 @@ local function ApplyDefaults(target, source)
   end
 end
 
+local function MigrateTrackedItems(db)
+  local default = db.track or defaults.track
+  for itemID, value in pairs(db.trackedItems) do
+    if value == true then
+      db.trackedItems[itemID] = {
+        r = default.r,
+        g = default.g,
+        b = default.b,
+      }
+    end
+  end
+end
+
+local function MigrateMinimapSettings(db)
+  db.minimap = db.minimap or {}
+  if db.minimap.show == nil then
+    if db.minimap.hide ~= nil then
+      db.minimap.show = not db.minimap.hide
+    else
+      db.minimap.show = true
+    end
+  end
+end
+
 function Tea_GetDB()
   ApplyDefaults(TeaDB, defaults)
 
   if (TeaDB.oneBagLayoutVersion or 0) < ONE_BAG_LAYOUT_VERSION then
     ApplyOneBagLayoutDefaults(TeaDB)
   end
+
+  MigrateTrackedItems(TeaDB)
+  MigrateMinimapSettings(TeaDB)
 
   return TeaDB
 end

@@ -1,7 +1,7 @@
 local ADDON_NAME = ...
 
 local PANEL_WIDTH = 320
-local PANEL_HEIGHT = 340
+local PANEL_HEIGHT = 400
 local FRAME_PADDING = 20
 local TAB_TOP = -40
 local CONTENT_TOP = -68
@@ -10,8 +10,8 @@ local MAX_TRACK_ROWS = 10
 
 local TABS = {
   {
-    id = "modules",
-    label = "Modules",
+    id = "general",
+    label = "General",
     options = {
       { label = "Tooltip extras", path = { "modules", "tooltipExtras" } },
       { label = "Auto-sell grey at vendors", path = { "modules", "vendorTrash" } },
@@ -25,6 +25,17 @@ local TABS = {
           end
         end,
       },
+      {
+        label = "Show minimap button",
+        path = { "minimap", "show" },
+        onChange = function(checked)
+          if checked then
+            Tea_ShowMinimapButton()
+          else
+            Tea_HideMinimapButton()
+          end
+        end,
+      },
     },
   },
   {
@@ -33,7 +44,7 @@ local TABS = {
     options = {
       { label = "Show vendor price", path = { "tooltip", "showVendorPrice" } },
       { label = "Show item ID", path = { "tooltip", "showItemId" } },
-      { label = "Only while holding Shift", path = { "tooltip", "requireShift" } },
+      { label = "Only enabled while holding Shift", path = { "tooltip", "requireShift" } },
     },
   },
   {
@@ -53,8 +64,10 @@ local tabPanels = {}
 local checkboxes = {}
 local trackListFrame
 local trackEditBox
+local trackingPanel
 local oneBagSliders = {}
 local activeTab = 1
+local RefreshTrackList
 
 local function GetOptionValue(path)
   local value = Tea_GetDB()
@@ -197,9 +210,10 @@ local function CreateCheckbox(parent, label, path, anchorFrame, yOffset, option)
   end)
 
   check:SetScript("OnClick", function(self)
-    SetOptionValue(path, self:GetChecked())
+    local checked = self:GetChecked()
+    SetOptionValue(path, checked)
     if option and option.onChange then
-      option.onChange()
+      option.onChange(checked)
     end
   end)
 
@@ -221,28 +235,113 @@ local function BuildOptionsPanel(content, options)
   return anchor
 end
 
-local function AddTrackedItemFromInput()
-  if not trackEditBox then
-    return
-  end
+local ROW_HEIGHT = 18
+local COLOR_SWATCH_SIZE = 18
 
-  local itemID = tonumber(trackEditBox:GetText())
-  local ok, message = Tea_TrackItem(itemID)
-  Tea_Print(message)
-  if ok then
-    trackEditBox:SetText("")
-  end
-end
-
-local function RefreshTrackList()
+local function ClearTrackList()
   if not trackListFrame then
     return
+  end
+
+  for _, region in ipairs({ trackListFrame:GetRegions() }) do
+    region:Hide()
+    region:SetParent(nil)
   end
 
   for _, child in ipairs({ trackListFrame:GetChildren() }) do
     child:Hide()
     child:SetParent(nil)
   end
+end
+
+local function UpdateColorSwatch(swatch, itemID)
+  local r, g, b = Tea_GetTrackColor(itemID)
+  local texture = swatch.texture
+  if texture.SetColorTexture then
+    texture:SetColorTexture(r, g, b, 1)
+  else
+    texture:SetVertexColor(r, g, b, 1)
+  end
+end
+
+local function OpenTrackColorPicker(itemID, swatch)
+  local r, g, b = Tea_GetTrackColor(itemID)
+
+  local function ApplyColor(nr, ng, nb)
+    Tea_SetTrackColor(itemID, nr, ng, nb)
+    UpdateColorSwatch(swatch, itemID)
+  end
+
+  if ColorPickerFrame.SetupColorPickerAndShow then
+    ColorPickerFrame:SetupColorPickerAndShow({
+      r = r,
+      g = g,
+      b = b,
+      hasOpacity = false,
+      swatchFunc = function()
+        local nr, ng, nb = ColorPickerFrame:GetColorRGB()
+        ApplyColor(nr, ng, nb)
+      end,
+      cancelFunc = function()
+        ApplyColor(r, g, b)
+      end,
+    })
+    return
+  end
+
+  ColorPickerFrame:Hide()
+  ColorPickerFrame:SetColorRGB(r, g, b)
+  ColorPickerFrame.hasOpacity = false
+  ColorPickerFrame.previousValues = { r = r, g = g, b = b }
+  ColorPickerFrame.func = function()
+    local nr, ng, nb = ColorPickerFrame:GetColorRGB()
+    ApplyColor(nr, ng, nb)
+  end
+  ColorPickerFrame.cancelFunc = function()
+    local prev = ColorPickerFrame.previousValues
+    ApplyColor(prev.r, prev.g, prev.b)
+  end
+  ColorPickerFrame:Show()
+end
+
+local function CreateTrackColorSwatch(parent, itemID)
+  local swatch = CreateFrame("Button", nil, parent)
+  swatch:SetSize(COLOR_SWATCH_SIZE, COLOR_SWATCH_SIZE)
+
+  local border = swatch:CreateTexture(nil, "BACKGROUND")
+  border:SetPoint("TOPLEFT", -1, 1)
+  border:SetPoint("BOTTOMRIGHT", 1, -1)
+  border:SetTexture("Interface\\Buttons\\WHITE8x8")
+  border:SetVertexColor(0.35, 0.35, 0.35, 1)
+
+  local texture = swatch:CreateTexture(nil, "ARTWORK")
+  texture:SetAllPoints()
+  texture:SetTexture("Interface\\Buttons\\WHITE8x8")
+  swatch.texture = texture
+
+  UpdateColorSwatch(swatch, itemID)
+
+  swatch:SetScript("OnClick", function()
+    OpenTrackColorPicker(itemID, swatch)
+  end)
+  swatch:SetScript("OnEnter", function(self)
+    GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+    GameTooltip:SetText("Border color")
+    GameTooltip:Show()
+  end)
+  swatch:SetScript("OnLeave", function()
+    GameTooltip:Hide()
+  end)
+
+  return swatch
+end
+
+RefreshTrackList = function()
+  if not trackListFrame then
+    return
+  end
+
+  ClearTrackList()
 
   local ids = Tea_GetTrackedItemIDs()
   if #ids == 0 then
@@ -256,12 +355,24 @@ local function RefreshTrackList()
   for index = 1, math.min(#ids, MAX_TRACK_ROWS) do
     local itemID = ids[index]
     local row = CreateFrame("Frame", nil, trackListFrame)
-    row:SetSize(trackListFrame:GetWidth(), 18)
-    row:SetPoint("TOPLEFT", 0, y)
+    row:SetHeight(ROW_HEIGHT)
+    row:SetPoint("TOPLEFT", trackListFrame, "TOPLEFT", 0, y)
+    row:SetPoint("TOPRIGHT", trackListFrame, "TOPRIGHT", 0, y)
+
+    local remove = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
+    remove:SetSize(36, 16)
+    remove:SetPoint("RIGHT", 0, 0)
+    remove:SetText("X")
+    remove:SetScript("OnClick", function()
+      Tea_UntrackItem(itemID)
+    end)
+
+    local colorSwatch = CreateTrackColorSwatch(row, itemID)
+    colorSwatch:SetPoint("RIGHT", remove, "LEFT", -6, 0)
 
     local label = row:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
     label:SetPoint("LEFT", 0, 0)
-    label:SetWidth(trackListFrame:GetWidth() - 44)
+    label:SetPoint("RIGHT", colorSwatch, "LEFT", -6, 0)
     label:SetJustifyH("LEFT")
 
     local name = Tea_Util.GetItemInfo(itemID)
@@ -272,21 +383,41 @@ local function RefreshTrackList()
       Tea_Util.GetItemInfo(itemID)
     end
 
-    local remove = CreateFrame("Button", nil, row, "UIPanelButtonTemplate")
-    remove:SetSize(36, 16)
-    remove:SetPoint("RIGHT", 0, 0)
-    remove:SetText("X")
-    remove:SetScript("OnClick", function()
-      Tea_UntrackItem(itemID)
-    end)
-
-    y = y - 18
+    y = y - ROW_HEIGHT
   end
 
   if #ids > MAX_TRACK_ROWS then
     local more = trackListFrame:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
     more:SetPoint("TOPLEFT", 0, y)
     more:SetText(string.format("+%d more (use /tea track list)", #ids - MAX_TRACK_ROWS))
+  end
+end
+
+local function RefreshTrackingPanel()
+  if not trackingPanel then
+    return
+  end
+
+  SyncTabScrollSize(trackingPanel)
+  RefreshTrackList()
+  UpdateTabScrollHeight(trackingPanel, trackingPanel.scrollBottom)
+
+  if trackingPanel.scrollFrame and trackingPanel.scrollFrame.UpdateScrollChildRect then
+    trackingPanel.scrollFrame:UpdateScrollChildRect()
+  end
+end
+
+local function AddTrackedItemFromInput()
+  if not trackEditBox then
+    return
+  end
+
+  local itemID = tonumber(trackEditBox:GetText())
+  local ok, message = Tea_TrackItem(itemID)
+  Tea_Print(message)
+  if ok then
+    trackEditBox:SetText("")
+    RefreshTrackingPanel()
   end
 end
 
@@ -299,7 +430,7 @@ local function BuildTrackingPanel(content, panel)
 
   local hint = content:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
   hint:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -4)
-  hint:SetText("Item IDs show on tooltips when enabled.")
+  hint:SetText("Input an item ID and click 'Add' to track it.\nYou can adjust the border color of tracked items.")
 
   trackEditBox = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
   trackEditBox:SetSize(140, 20)
@@ -323,16 +454,12 @@ local function BuildTrackingPanel(content, panel)
   trackListFrame:SetPoint("RIGHT", content, "RIGHT", -8, 0)
   trackListFrame:SetHeight(180)
 
+  trackingPanel = panel
   panel.scrollBottom = trackListFrame
 end
 
 function Tea_RefreshTrackOptions()
-  RefreshTrackList()
-  for _, panel in ipairs(tabPanels) do
-    if panel.scrollBottom then
-      UpdateTabScrollHeight(panel, panel.scrollBottom)
-    end
-  end
+  RefreshTrackingPanel()
 end
 
 local function CreateSlider(content, label, path, minValue, maxValue, step, anchor, yOffset, onChange)
@@ -394,12 +521,16 @@ local function BuildOneBagPanel(content, panel)
   header:SetPoint("TOPLEFT", 8, -12)
   header:SetText("teaBag")
 
-  local enable = CreateCheckbox(content, "Enable one bag", { "modules", "oneBag" }, header, -12, {
+  local enable = CreateCheckbox(content, "Enable", { "modules", "oneBag" }, header, -8, {
+    onChange = RefreshBagAppearance,
+  })
+
+  local greyCheckbox = CreateCheckbox(content, "Grey out junk item icons", { "oneBag", "greyJunkIcons" }, enable, -ROW_SPACING, {
     onChange = RefreshBagAppearance,
   })
 
   local columnsHint = content:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
-  columnsHint:SetPoint("TOPLEFT", enable, "BOTTOMLEFT", 0, -14)
+  columnsHint:SetPoint("TOPLEFT", greyCheckbox, "BOTTOMLEFT", 0, -14)
   columnsHint:SetText("Items per row")
 
   local columnsSlider = CreateSlider(
@@ -446,11 +577,7 @@ local function BuildOneBagPanel(content, panel)
     RefreshBagAppearance
   )
 
-  local greyCheckbox = CreateCheckbox(content, "Grey out junk item icons", { "oneBag", "greyJunkIcons" }, paddingSlider, -14, {
-    onChange = RefreshBagAppearance,
-  })
-
-  panel.scrollBottom = greyCheckbox
+  panel.scrollBottom = paddingSlider
 end
 
 local TAB_PANEL_LEVEL = 5
@@ -484,7 +611,7 @@ local function SelectTab(index)
   UpdateTabLevels(index)
 
   if TABS[index].id == "tracking" then
-    RefreshTrackList()
+    RefreshTrackingPanel()
   elseif TABS[index].id == "oneBag" then
     RefreshOneBagPanel()
   end
@@ -541,7 +668,7 @@ end
 local function RefreshPanel()
   RefreshCheckboxes()
   if TABS[activeTab].id == "tracking" then
-    RefreshTrackList()
+    RefreshTrackingPanel()
   elseif TABS[activeTab].id == "oneBag" then
     RefreshOneBagPanel()
   end
@@ -639,6 +766,10 @@ local function BuildPanel()
   end
 
   SelectTab(1)
+end
+
+function Tea_RefreshOptionsCheckboxes()
+  RefreshCheckboxes()
 end
 
 function Tea_ToggleOptions()

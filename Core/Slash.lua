@@ -34,6 +34,7 @@ SlashCmdList["TEA"] = function(msg)
     Tea_Print("  /tea untrack <id>")
     Tea_Print("  /tea track list")
     Tea_Print("  /tea bag")
+    Tea_Print("  /tea minimap")
     Tea_Print("  /tea sell")
     Tea_Print("  /tea reload")
     return
@@ -108,6 +109,12 @@ SlashCmdList["TEA"] = function(msg)
 
   if msg == "bag" or msg == "bags" then
     Tea_ToggleBag()
+    return
+  end
+
+  if msg == "minimap" then
+    Tea_ShowMinimapButton()
+    Tea_Print("Minimap icon shown.")
     return
   end
 

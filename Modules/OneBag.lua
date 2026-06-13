@@ -1,12 +1,20 @@
-local HEADER_HEIGHT = 20
-local SECTION_GAP = 10
-local BAG_BAR_HEIGHT = 30
+local HEADER_HEIGHT = 10
+local SECTION_GAP = 8
+local BAG_BAR_HEIGHT = 28
 local BAG_ICON_SIZE = 28
-local BAG_ICON_GAP = 6
-local CONTENT_TOP = 68
+local TITLE_TOP = -12
+local TITLE_HEIGHT = 12
+local SECTION_TOP_GAP = 6
+local CONTENT_TOP = math.abs(TITLE_TOP) + TITLE_HEIGHT + SECTION_TOP_GAP
 local SIDE_OFFSET = 12
-local MONEY_BAR_HEIGHT = 28
-local BOTTOM_PADDING = 14
+local BOTTOM_BAR_OFFSET = 14
+local BOTTOM_PADDING = 8
+local MONEY_RIGHT_OFFSET = 6
+local INVENTORY_BAR_GAP = 4
+local BAGS_HEADER_TITLE = "Bags"
+local BOTTOM_BAR_HEIGHT = HEADER_HEIGHT + INVENTORY_BAR_GAP + BAG_BAR_HEIGHT + BOTTOM_BAR_OFFSET
+local BOTTOM_BAR_LEVEL = 30
+local CLOSE_BUTTON_SIZE = 16
 local BASE_SLOT_SIZE = 37
 local ITEM_QUALITY_POOR = (Enum and Enum.ItemQuality and Enum.ItemQuality.Poor) or 0
 local ITEM_QUALITY_COMMON = (Enum and Enum.ItemQuality and (Enum.ItemQuality.Common or Enum.ItemQuality.Standard)) or 1
@@ -22,7 +30,7 @@ local HIGHLIGHT_DIM_ALPHA = 0.6
 local GREY_JUNK_DIM_ALPHA = 0.35
 
 local SECTION_DEFS = {
-  { id = "bags", title = "Bags", order = 1 },
+  { id = "bags", title = "Inventory", order = 1 },
   { id = "ammo", title = "Ammo", order = 2 },
   { id = "soul", title = "Soul Shards", order = 3 },
   { id = "other", title = "Special", order = 4 },
@@ -31,6 +39,7 @@ local SECTION_DEFS = {
 local frame
 local bagBarFrame
 local moneyFrame
+local frameTitle
 local slotButtons = {}
 local equippedBagButtons = {}
 local bagContainers = {}
@@ -40,6 +49,11 @@ local highlightBagSlots = false
 local lastSlotCount = 0
 local lastLayoutKey = ""
 local lastSettingsKey = ""
+local merchantBagsActive = false
+
+local function IsMerchantOpen()
+  return merchantBagsActive or (MerchantFrame and MerchantFrame:IsShown())
+end
 
 local function IsEnabled()
   return Tea_GetDB().modules.oneBag
@@ -237,16 +251,18 @@ end
 local function UpdateEquippedBagHighlights()
   for _, button in ipairs(equippedBagButtons) do
     if button:IsShown() then
-      if highlightedBagID and button.bagID == highlightedBagID then
-        button.border:SetVertexColor(HIGHLIGHT_BAG_R, HIGHLIGHT_BAG_G, HIGHLIGHT_BAG_B, HIGHLIGHT_BAG_ALPHA)
-        if button.icon then
-          button.icon:SetAlpha(1)
+      if button.border then
+        if highlightedBagID and button.bagID == highlightedBagID then
+          button.border:SetVertexColor(HIGHLIGHT_BAG_R, HIGHLIGHT_BAG_G, HIGHLIGHT_BAG_B, HIGHLIGHT_BAG_ALPHA)
+          button.border:Show()
+        else
+          button.border:Hide()
         end
-      else
-        button.border:SetVertexColor(1, 1, 1, 0.15)
-        if button.icon then
-          button.icon:SetAlpha(highlightedBagID and highlightBagSlots and HIGHLIGHT_DIM_ALPHA or 1)
-        end
+      end
+
+      if button.icon then
+        button.icon:SetAlpha(1)
+        button.icon:SetVertexColor(1, 1, 1)
       end
     end
   end
@@ -298,7 +314,7 @@ end
 local function GetBagSections()
   local sectionMap = {}
   for _, def in ipairs(SECTION_DEFS) do
-    sectionMap[def.id] = { title = def.title, order = def.order, slots = {} }
+    sectionMap[def.id] = { id = def.id, title = def.title, order = def.order, slots = {} }
   end
 
   for bag = BACKPACK_CONTAINER, NUM_BAG_FRAMES do
@@ -615,7 +631,7 @@ local function CreateEquippedBagButton(index)
   border:SetPoint("TOPLEFT", icon, "TOPLEFT", -1, 1)
   border:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 1, -1)
   border:SetTexture("Interface\\Buttons\\WHITE8x8")
-  border:SetVertexColor(1, 1, 1, 0.15)
+  border:Hide()
   button.border = border
 
   button:SetScript("OnEnter", function(self)
@@ -633,12 +649,18 @@ end
 local function LayoutEquippedBags()
   if not bagBarFrame then
     bagBarFrame = CreateFrame("Frame", nil, frame)
-    bagBarFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", SIDE_OFFSET, -30)
-    bagBarFrame:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -SIDE_OFFSET, -30)
-    bagBarFrame:SetHeight(BAG_BAR_HEIGHT)
   end
 
   local equippedBags = GetEquippedBags()
+  local bagCount = #equippedBags
+  local slotPadding = GetSlotPadding()
+  local barWidth = bagCount * BAG_ICON_SIZE + math.max(0, bagCount - 1) * slotPadding
+
+  bagBarFrame:ClearAllPoints()
+  bagBarFrame:SetSize(math.max(barWidth, 1), BAG_BAR_HEIGHT)
+  bagBarFrame:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", SIDE_OFFSET + slotPadding, BOTTOM_BAR_OFFSET)
+  bagBarFrame:SetFrameLevel(frame:GetFrameLevel() + BOTTOM_BAR_LEVEL)
+  bagBarFrame:Show()
 
   for index, bagInfo in ipairs(equippedBags) do
     local button = equippedBagButtons[index]
@@ -649,18 +671,19 @@ local function LayoutEquippedBags()
 
     button.bagID = bagInfo.bagID
     button.icon:SetTexture(GetBagIconTexture(bagInfo.bagID))
+    button:SetFrameLevel(bagBarFrame:GetFrameLevel() + 1)
     button:ClearAllPoints()
 
     if index == 1 then
-      button:SetPoint("LEFT", bagBarFrame, "LEFT", 0, 0)
+      button:SetPoint("BOTTOMLEFT", bagBarFrame, "BOTTOMLEFT", 0, 0)
     else
-      button:SetPoint("LEFT", equippedBagButtons[index - 1], "RIGHT", BAG_ICON_GAP, 0)
+      button:SetPoint("LEFT", equippedBagButtons[index - 1], "RIGHT", slotPadding, 0)
     end
 
     button:Show()
   end
 
-  for index = #equippedBags + 1, #equippedBagButtons do
+  for index = bagCount + 1, #equippedBagButtons do
     equippedBagButtons[index]:Hide()
   end
 end
@@ -674,7 +697,7 @@ end
 local function GetOrCreateHeader(index, title)
   local header = sectionHeaders[index]
   if not header then
-    header = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    header = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     sectionHeaders[index] = header
   end
   header:SetText(title)
@@ -692,6 +715,42 @@ local function UpdateMoney()
   end
 end
 
+local function LayoutSectionSlots(section, startY, buttonIndex, columns, slotSize, slotPadding)
+  local y = startY - HEADER_HEIGHT
+
+  for slotIndex, slotInfo in ipairs(section.slots) do
+    buttonIndex = buttonIndex + 1
+    local button = slotButtons[buttonIndex]
+    if not button then
+      button = CreateSlotButton(buttonIndex, slotInfo.bag)
+      slotButtons[buttonIndex] = button
+    elseif button:GetParent() ~= GetBagContainer(slotInfo.bag) then
+      button:SetParent(GetBagContainer(slotInfo.bag))
+    end
+
+    button.bagID = slotInfo.bag
+    button.slotID = slotInfo.slot
+    button:SetID(slotInfo.slot)
+    button:Show()
+
+    local col = (slotIndex - 1) % columns
+    local row = math.floor((slotIndex - 1) / columns)
+    button:ClearAllPoints()
+    button:SetPoint(
+      "TOPLEFT",
+      frame,
+      "TOPLEFT",
+      SIDE_OFFSET + slotPadding + col * (slotSize + slotPadding),
+      y - slotPadding - row * (slotSize + slotPadding)
+    )
+
+    UpdateSlot(button)
+  end
+
+  local rows = math.ceil(#section.slots / columns)
+  return y - rows * (slotSize + slotPadding) - slotPadding, buttonIndex
+end
+
 local function LayoutSlots()
   local sections = GetBagSections()
   local columns = GetColumns()
@@ -701,55 +760,51 @@ local function LayoutSlots()
   local y = -CONTENT_TOP
   local buttonIndex = 0
   local headerIndex = 0
+  local inventorySection
+  local specialtySections = {}
 
   LayoutEquippedBags()
   HideSectionHeaders()
 
   for _, section in ipairs(sections) do
+    if section.id == "bags" then
+      inventorySection = section
+    else
+      table.insert(specialtySections, section)
+    end
+  end
+
+  if inventorySection then
+    headerIndex = headerIndex + 1
+    local header = GetOrCreateHeader(headerIndex, inventorySection.title)
+    header:ClearAllPoints()
+    header:SetPoint("TOPLEFT", frame, "TOPLEFT", SIDE_OFFSET, y)
+    y, buttonIndex = LayoutSectionSlots(inventorySection, y, buttonIndex, columns, slotSize, slotPadding)
+    y = y - SECTION_GAP
+  end
+
+  for _, section in ipairs(specialtySections) do
     headerIndex = headerIndex + 1
     local header = GetOrCreateHeader(headerIndex, section.title)
     header:ClearAllPoints()
     header:SetPoint("TOPLEFT", frame, "TOPLEFT", SIDE_OFFSET, y)
-    y = y - HEADER_HEIGHT
-
-    for slotIndex, slotInfo in ipairs(section.slots) do
-      buttonIndex = buttonIndex + 1
-      local button = slotButtons[buttonIndex]
-      if not button then
-        button = CreateSlotButton(buttonIndex, slotInfo.bag)
-        slotButtons[buttonIndex] = button
-      elseif button:GetParent() ~= GetBagContainer(slotInfo.bag) then
-        button:SetParent(GetBagContainer(slotInfo.bag))
-      end
-
-      button.bagID = slotInfo.bag
-      button.slotID = slotInfo.slot
-      button:SetID(slotInfo.slot)
-      button:Show()
-
-      local col = (slotIndex - 1) % columns
-      local row = math.floor((slotIndex - 1) / columns)
-      button:ClearAllPoints()
-      button:SetPoint(
-        "TOPLEFT",
-        frame,
-        "TOPLEFT",
-        SIDE_OFFSET + slotPadding + col * (slotSize + slotPadding),
-        y - slotPadding - row * (slotSize + slotPadding)
-      )
-
-      UpdateSlot(button)
-    end
-
-    local rows = math.ceil(#section.slots / columns)
-    y = y - rows * (slotSize + slotPadding) - slotPadding - SECTION_GAP
+    y, buttonIndex = LayoutSectionSlots(section, y, buttonIndex, columns, slotSize, slotPadding)
+    y = y - SECTION_GAP
   end
+
+  local frameHeight = math.abs(y) + BOTTOM_BAR_HEIGHT + BOTTOM_PADDING
+
+  headerIndex = headerIndex + 1
+  local bagsHeader = GetOrCreateHeader(headerIndex, BAGS_HEADER_TITLE)
+  bagsHeader:ClearAllPoints()
+  local bagBarTop = -(frameHeight - BOTTOM_BAR_OFFSET - BAG_BAR_HEIGHT)
+  bagsHeader:SetPoint("TOPLEFT", frame, "TOPLEFT", SIDE_OFFSET, bagBarTop + HEADER_HEIGHT + INVENTORY_BAR_GAP)
 
   for index = buttonIndex + 1, #slotButtons do
     slotButtons[index]:Hide()
   end
 
-  frame:SetSize(gridWidth + 24, math.abs(y) + MONEY_BAR_HEIGHT + BOTTOM_PADDING)
+  frame:SetSize(gridWidth + 24, frameHeight)
   lastSlotCount = #GetBagSlots()
   lastLayoutKey = GetLayoutKey()
   lastSettingsKey = GetSettingsKey()
@@ -784,20 +839,21 @@ local function BuildFrame()
     frame:SetBackdropBorderColor(1, 1, 1, 1)
   end
 
-  tinsert(UISpecialFrames, frame:GetName())
-
-  local title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-  title:SetPoint("TOP", 0, -14)
-  title:SetText("teaBag")
+  frameTitle = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+  frameTitle:SetPoint("TOPLEFT", SIDE_OFFSET, TITLE_TOP)
+  frameTitle:SetText("teaBag")
+  frameTitle:SetTextColor(0.72, 0.95, 0.68)
 
   local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-  close:SetPoint("TOPRIGHT", -4, -4)
+  close:SetSize(CLOSE_BUTTON_SIZE, CLOSE_BUTTON_SIZE)
+  close:SetPoint("TOPRIGHT", -6, -10)
   close:SetScript("OnClick", function()
     Tea_CloseBag()
   end)
 
   moneyFrame = CreateFrame("Frame", "TeaBagMoneyFrame", frame, "SmallMoneyFrameTemplate")
-  moneyFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, 10)
+  moneyFrame:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -MONEY_RIGHT_OFFSET, BOTTOM_BAR_OFFSET)
+  moneyFrame:SetFrameLevel(frame:GetFrameLevel() + BOTTOM_BAR_LEVEL)
   if SmallMoneyFrame_OnLoad then
     SmallMoneyFrame_OnLoad(moneyFrame)
   end
@@ -831,6 +887,53 @@ local function CloseBlizzardBags()
   end
 end
 
+local function ShowBagFrame()
+  if not IsEnabled() then
+    return
+  end
+
+  if not frame then
+    BuildFrame()
+  end
+  if not frame then
+    return
+  end
+
+  LayoutSlots()
+  UpdateMoney()
+  CloseBlizzardBags()
+  frame:Show()
+end
+
+local function OpenBagsForMerchant(merchantFrame)
+  if not IsEnabled() then
+    return false
+  end
+
+  merchantBagsActive = true
+
+  local wasOpen = Tea_BagIsOpen()
+  if merchantFrame and not wasOpen and FRAME_THAT_OPENED_BAGS == nil then
+    FRAME_THAT_OPENED_BAGS = merchantFrame:GetName()
+  end
+
+  CloseBlizzardBags()
+
+  if not frame then
+    BuildFrame()
+  end
+  if not frame then
+    return true
+  end
+
+  if not wasOpen then
+    LayoutSlots()
+  end
+  UpdateMoney()
+  frame:Show()
+  return true
+end
+
 local origOpenAllBags
 local origOpenBag
 local origOpenBackpack
@@ -859,29 +962,16 @@ local function GuardAllBlizzardBagFrames()
   end
 end
 
-local function SuppressDefaultBags(frame)
-  if not IsEnabled() then
-    return false
-  end
-
-  if frame and FRAME_THAT_OPENED_BAGS == nil then
-    FRAME_THAT_OPENED_BAGS = frame:GetName()
-  end
-
-  CloseBlizzardBags()
-  return true
-end
-
 local function SetupBlizzardBagSuppression()
   GuardAllBlizzardBagFrames()
 
   if OpenAllBags and not SetupBlizzardBagSuppression.openAllHooked then
     origOpenAllBags = OpenAllBags
-    _G.OpenAllBags = function(frame)
-      if SuppressDefaultBags(frame) then
+    _G.OpenAllBags = function(merchantFrame)
+      if OpenBagsForMerchant(merchantFrame) then
         return
       end
-      origOpenAllBags(frame)
+      origOpenAllBags(merchantFrame)
     end
     SetupBlizzardBagSuppression.openAllHooked = true
   end
@@ -903,11 +993,27 @@ local function SetupBlizzardBagSuppression()
     _G.OpenBackpack = function()
       if IsEnabled() then
         CloseBlizzardBags()
+        if IsMerchantOpen() then
+          OpenBagsForMerchant(MerchantFrame)
+        end
         return
       end
       origOpenBackpack()
     end
     SetupBlizzardBagSuppression.openBackpackHooked = true
+  end
+
+  if CloseAllBags and not SetupBlizzardBagSuppression.closeAllHooked then
+    local origCloseAllBags = CloseAllBags
+    _G.CloseAllBags = function(...)
+      if IsEnabled() and IsMerchantOpen() then
+        CloseBlizzardBags()
+        OpenBagsForMerchant(MerchantFrame)
+        return
+      end
+      origCloseAllBags(...)
+    end
+    SetupBlizzardBagSuppression.closeAllHooked = true
   end
 
   if ContainerFrame_GenerateFrame and not SetupBlizzardBagSuppression.generateHooked then
@@ -932,18 +1038,7 @@ function Tea_OpenBag()
     return
   end
 
-  if not frame then
-    BuildFrame()
-  end
-
-  if not frame then
-    return
-  end
-
-  LayoutSlots()
-  UpdateMoney()
-  CloseBlizzardBags()
-  frame:Show()
+  ShowBagFrame()
 end
 
 function Tea_CloseBag()
@@ -982,6 +1077,7 @@ eventFrame:RegisterEvent("PLAYER_LOGIN")
 eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("PLAYER_MONEY")
 eventFrame:RegisterEvent("MERCHANT_SHOW")
+eventFrame:RegisterEvent("MERCHANT_CLOSED")
 
 eventFrame:SetScript("OnEvent", function(_, event)
   if event == "BAG_UPDATE_DELAYED" then
@@ -989,14 +1085,26 @@ eventFrame:SetScript("OnEvent", function(_, event)
   elseif event == "PLAYER_MONEY" then
     UpdateMoney()
   elseif event == "MERCHANT_SHOW" then
+    merchantBagsActive = true
     if IsEnabled() then
-      SuppressDefaultBags(MerchantFrame)
+      OpenBagsForMerchant(MerchantFrame)
+      C_Timer.After(0, function()
+        if merchantBagsActive and IsEnabled() then
+          OpenBagsForMerchant(MerchantFrame)
+        end
+      end)
     end
+  elseif event == "MERCHANT_CLOSED" then
+    merchantBagsActive = false
   elseif event == "PLAYER_LOGIN" then
     if not eventFrame.backpackHooked and ToggleBackpack then
       local origToggleBackpack = ToggleBackpack
       ToggleBackpack = function()
         if IsEnabled() then
+          if IsMerchantOpen() then
+            OpenBagsForMerchant(MerchantFrame)
+            return
+          end
           Tea_ToggleBag()
         else
           origToggleBackpack()

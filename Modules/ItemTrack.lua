@@ -8,7 +8,7 @@ local function ApplyBorder(button, itemID)
   end
 
   if IsEnabled() and itemID and Tea_IsTracked(itemID) then
-    local r, g, b = Tea_GetTrackColor()
+    local r, g, b = Tea_GetTrackColor(itemID)
     Tea_Util.SetButtonRoundedIconBorderColor(button, "TeaTrackBorder", r, g, b, true)
   else
     Tea_Util.SetButtonRoundedIconBorderColor(button, "TeaTrackBorder", nil, nil, nil, false)
