@@ -9,8 +9,7 @@ Quality-of-life addon for **WoW Classic Era**.
    ```
    World of Warcraft/_classic_era_/Interface/AddOns/
    ```
-3. You should end up with `Interface/AddOns/tea/tea.toc`
-4. Enable **tea** on the character select AddOns screen, then `/reload`
+3. Enable **tea** on the character select AddOns screen
 
 ## Features
 
