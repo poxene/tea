@@ -3,20 +3,20 @@ local function IsEnabled()
 end
 
 local function ApplyBorder(button, itemID)
-  if not button or not button.TeaTrackBorder then
+  if not button then
     return
   end
 
   if IsEnabled() and itemID and Tea_IsTracked(itemID) then
     local r, g, b = Tea_GetTrackColor()
-    Tea_Util.SetRoundedIconBorderColor(button.TeaTrackBorder, r, g, b, true)
+    Tea_Util.SetButtonRoundedIconBorderColor(button, "TeaTrackBorder", r, g, b, true)
   else
-    Tea_Util.SetRoundedIconBorderColor(button.TeaTrackBorder, nil, nil, nil, false)
+    Tea_Util.SetButtonRoundedIconBorderColor(button, "TeaTrackBorder", nil, nil, nil, false)
   end
 end
 
 function Tea_EnsureTrackBorder(button)
-  Tea_Util.EnsureRoundedIconBorder(button, "TeaTrackBorder", "OVERLAY", 5)
+  Tea_Util.EnsureRoundedIconBorder(button, "TeaTrackBorder", 5)
 end
 
 function Tea_UpdateTrackBorder(button, itemID)

@@ -90,6 +90,92 @@ local function SetNumericOptionValue(path, value)
   node[path[#path]] = value
 end
 
+local SCROLLBAR_WIDTH = 26
+
+local function GetPanelContentWidth(panel)
+  local width = panel and panel:GetWidth() or 0
+  if width > 0 then
+    return width
+  end
+
+  return PANEL_WIDTH - (FRAME_PADDING * 2) - SCROLLBAR_WIDTH
+end
+
+local function SyncTabScrollSize(panel)
+  if not panel or not panel.scrollFrame or not panel.scrollChild then
+    return
+  end
+
+  local scrollFrame = panel.scrollFrame
+  local scrollChild = panel.scrollChild
+  local width = scrollFrame:GetWidth()
+
+  if width and width > 0 then
+    scrollChild:SetWidth(width)
+  else
+    scrollChild:SetWidth(GetPanelContentWidth(panel))
+  end
+
+  if scrollFrame.UpdateScrollChildRect then
+    scrollFrame:UpdateScrollChildRect()
+  end
+end
+
+local function UpdateTabScrollHeight(panel, bottomWidget, padding)
+  if not panel or not panel.scrollChild or not panel.scrollFrame then
+    return
+  end
+
+  padding = padding or 24
+  local scrollChild = panel.scrollChild
+  local scrollFrame = panel.scrollFrame
+
+  SyncTabScrollSize(panel)
+
+  if bottomWidget then
+    local bottom = bottomWidget:GetBottom()
+    local top = scrollChild:GetTop()
+    if bottom and top then
+      scrollChild:SetHeight(math.max((top - bottom) + padding, scrollFrame:GetHeight() or 1))
+    elseif bottom then
+      scrollChild:SetHeight(math.max(-bottom + padding, scrollFrame:GetHeight() or 1))
+    end
+  end
+
+  if (scrollChild:GetHeight() or 0) <= 1 then
+    scrollChild:SetHeight(scrollFrame:GetHeight() or 200)
+  end
+
+  if scrollFrame.UpdateScrollChildRect then
+    scrollFrame:UpdateScrollChildRect()
+  end
+end
+
+local function CreateTabScrollArea(panel)
+  local scrollFrame = CreateFrame("ScrollFrame", nil, panel, "UIPanelScrollFrameTemplate")
+  scrollFrame:SetPoint("TOPLEFT", 0, 0)
+  scrollFrame:SetPoint("BOTTOMRIGHT", 0, 0)
+  scrollFrame:SetFrameLevel(panel:GetFrameLevel() + 2)
+
+  local scrollChild = CreateFrame("Frame", nil, scrollFrame)
+  scrollChild:SetWidth(GetPanelContentWidth(panel))
+  scrollChild:SetHeight(1)
+  scrollFrame:SetScrollChild(scrollChild)
+
+  scrollFrame:SetScript("OnShow", function()
+    SyncTabScrollSize(panel)
+    UpdateTabScrollHeight(panel, panel.scrollBottom)
+  end)
+
+  scrollFrame:SetScript("OnSizeChanged", function()
+    SyncTabScrollSize(panel)
+  end)
+
+  panel.scrollFrame = scrollFrame
+  panel.scrollChild = scrollChild
+  return scrollChild
+end
+
 local function RefreshCheckboxes()
   for _, entry in ipairs(checkboxes) do
     entry.button:SetChecked(GetOptionValue(entry.path))
@@ -121,16 +207,18 @@ local function CreateCheckbox(parent, label, path, anchorFrame, yOffset, option)
   return check
 end
 
-local function BuildOptionsPanel(panel, options)
-  local header = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+local function BuildOptionsPanel(content, options)
+  local header = content:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
   header:SetPoint("TOPLEFT", 8, -12)
-  header:SetText(panel.tabTitle or "")
+  header:SetText(content.tabTitle or "")
 
   local anchor = header
   for optionIndex, option in ipairs(options) do
     local offset = optionIndex == 1 and -8 or -ROW_SPACING
-    anchor = CreateCheckbox(panel, option.label, option.path, anchor, offset, option)
+    anchor = CreateCheckbox(content, option.label, option.path, anchor, offset, option)
   end
+
+  return anchor
 end
 
 local function AddTrackedItemFromInput()
@@ -202,25 +290,25 @@ local function RefreshTrackList()
   end
 end
 
-local function BuildTrackingPanel(panel)
-  panel.tabTitle = "Tracked Items"
+local function BuildTrackingPanel(content, panel)
+  content.tabTitle = "Tracked Items"
 
-  local header = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+  local header = content:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
   header:SetPoint("TOPLEFT", 8, -12)
   header:SetText("Tracked Items")
 
-  local hint = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+  local hint = content:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
   hint:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -4)
   hint:SetText("Item IDs show on tooltips when enabled.")
 
-  trackEditBox = CreateFrame("EditBox", nil, panel, "InputBoxTemplate")
+  trackEditBox = CreateFrame("EditBox", nil, content, "InputBoxTemplate")
   trackEditBox:SetSize(140, 20)
   trackEditBox:SetPoint("TOPLEFT", hint, "BOTTOMLEFT", 0, -10)
   trackEditBox:SetAutoFocus(false)
   trackEditBox:SetNumeric(true)
   trackEditBox:SetMaxLetters(10)
 
-  local addButton = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+  local addButton = CreateFrame("Button", nil, content, "UIPanelButtonTemplate")
   addButton:SetSize(52, 20)
   addButton:SetPoint("LEFT", trackEditBox, "RIGHT", 6, 0)
   addButton:SetText("Add")
@@ -230,20 +318,27 @@ local function BuildTrackingPanel(panel)
     AddTrackedItemFromInput()
   end)
 
-  trackListFrame = CreateFrame("Frame", nil, panel)
+  trackListFrame = CreateFrame("Frame", nil, content)
   trackListFrame:SetPoint("TOPLEFT", trackEditBox, "BOTTOMLEFT", 0, -10)
-  trackListFrame:SetPoint("RIGHT", panel, "RIGHT", -8, 0)
+  trackListFrame:SetPoint("RIGHT", content, "RIGHT", -8, 0)
   trackListFrame:SetHeight(180)
+
+  panel.scrollBottom = trackListFrame
 end
 
 function Tea_RefreshTrackOptions()
   RefreshTrackList()
+  for _, panel in ipairs(tabPanels) do
+    if panel.scrollBottom then
+      UpdateTabScrollHeight(panel, panel.scrollBottom)
+    end
+  end
 end
 
-local function CreateSlider(panel, label, path, minValue, maxValue, step, anchor, yOffset, onChange)
-  local slider = CreateFrame("Slider", "TeaOptionsSlider" .. #oneBagSliders + 1, panel, "OptionsSliderTemplate")
+local function CreateSlider(content, label, path, minValue, maxValue, step, anchor, yOffset, onChange)
+  local slider = CreateFrame("Slider", "TeaOptionsSlider" .. #oneBagSliders + 1, content, "OptionsSliderTemplate")
   slider:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, yOffset)
-  slider:SetPoint("RIGHT", panel, "RIGHT", -24, 0)
+  slider:SetPoint("RIGHT", content, "RIGHT", -24, 0)
   slider:SetMinMaxValues(minValue, maxValue)
   slider:SetValueStep(step)
   slider:SetObeyStepOnDrag(true)
@@ -292,23 +387,23 @@ local function RefreshBagAppearance()
   end
 end
 
-local function BuildOneBagPanel(panel)
-  panel.tabTitle = "teaBag"
+local function BuildOneBagPanel(content, panel)
+  content.tabTitle = "teaBag"
 
-  local header = panel:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
+  local header = content:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
   header:SetPoint("TOPLEFT", 8, -12)
   header:SetText("teaBag")
 
-  local enable = CreateCheckbox(panel, "Enable one bag", { "modules", "oneBag" }, header, -12, {
+  local enable = CreateCheckbox(content, "Enable one bag", { "modules", "oneBag" }, header, -12, {
     onChange = RefreshBagAppearance,
   })
 
-  local columnsHint = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+  local columnsHint = content:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
   columnsHint:SetPoint("TOPLEFT", enable, "BOTTOMLEFT", 0, -14)
   columnsHint:SetText("Items per row")
 
   local columnsSlider = CreateSlider(
-    panel,
+    content,
     "Columns",
     { "oneBag", "columns" },
     4,
@@ -319,12 +414,12 @@ local function BuildOneBagPanel(panel)
     RefreshBagAppearance
   )
 
-  local slotHint = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+  local slotHint = content:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
   slotHint:SetPoint("TOPLEFT", columnsSlider, "BOTTOMLEFT", 0, -18)
   slotHint:SetText("Slot size")
 
   local slotSlider = CreateSlider(
-    panel,
+    content,
     "Slot size",
     { "oneBag", "slotSize" },
     28,
@@ -335,12 +430,12 @@ local function BuildOneBagPanel(panel)
     RefreshBagAppearance
   )
 
-  local paddingHint = panel:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+  local paddingHint = content:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
   paddingHint:SetPoint("TOPLEFT", slotSlider, "BOTTOMLEFT", 0, -18)
   paddingHint:SetText("Slot padding")
 
-  CreateSlider(
-    panel,
+  local paddingSlider = CreateSlider(
+    content,
     "Padding",
     { "oneBag", "slotPadding" },
     0,
@@ -350,6 +445,12 @@ local function BuildOneBagPanel(panel)
     -8,
     RefreshBagAppearance
   )
+
+  local greyCheckbox = CreateCheckbox(content, "Grey out junk item icons", { "oneBag", "greyJunkIcons" }, paddingSlider, -14, {
+    onChange = RefreshBagAppearance,
+  })
+
+  panel.scrollBottom = greyCheckbox
 end
 
 local TAB_PANEL_LEVEL = 5
@@ -387,6 +488,8 @@ local function SelectTab(index)
   elseif TABS[index].id == "oneBag" then
     RefreshOneBagPanel()
   end
+
+  UpdateTabScrollHeight(tabPanels[index], tabPanels[index].scrollBottom)
 end
 
 local TAB_PADDING = 8
@@ -442,6 +545,8 @@ local function RefreshPanel()
   elseif TABS[activeTab].id == "oneBag" then
     RefreshOneBagPanel()
   end
+
+  UpdateTabScrollHeight(tabPanels[activeTab], tabPanels[activeTab].scrollBottom)
 end
 
 local function BuildPanel()
@@ -456,7 +561,13 @@ local function BuildPanel()
   frame:RegisterForDrag("LeftButton")
   frame:SetScript("OnDragStart", frame.StartMoving)
   frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
-  frame:SetScript("OnShow", RefreshPanel)
+  frame:SetScript("OnShow", function()
+    RefreshPanel()
+    for _, panel in ipairs(tabPanels) do
+      SyncTabScrollSize(panel)
+      UpdateTabScrollHeight(panel, panel.scrollBottom)
+    end
+  end)
   frame:Hide()
 
   if frame.SetBackdrop then
@@ -513,14 +624,18 @@ local function BuildPanel()
 
     tabPanels[index] = panel
 
+    local content = CreateTabScrollArea(panel)
+
     if tab.options then
-      panel.tabTitle = tab.label
-      BuildOptionsPanel(panel, tab.options)
+      content.tabTitle = tab.label
+      panel.scrollBottom = BuildOptionsPanel(content, tab.options)
     elseif tab.id == "tracking" then
-      BuildTrackingPanel(panel)
+      BuildTrackingPanel(content, panel)
     elseif tab.id == "oneBag" then
-      BuildOneBagPanel(panel)
+      BuildOneBagPanel(content, panel)
     end
+
+    UpdateTabScrollHeight(panel, panel.scrollBottom)
   end
 
   SelectTab(1)

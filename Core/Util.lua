@@ -63,40 +63,57 @@ function Util.IsGreyItem(itemID)
   return quality == Enum.ItemQuality.Poor
 end
 
-local BORDER_TEXTURE = "Interface\\Common\\WhiteIconFrame"
+local BORDER_EDGE_FILE = "Interface\\Buttons\\WHITE8x8"
+local DEFAULT_BORDER_SIZE = 2
+local BORDER_ALPHA = 0.55
 
-function Util.GetIconBorderScale()
-  return 1
+function Util.GetIconBorderThickness(scale)
+  scale = scale or 1
+  return math.max(1, math.floor(DEFAULT_BORDER_SIZE * scale + 0.5))
 end
 
-local function ApplyRoundedIconBorderLayout(border, anchor)
+local function CleanupBorderArtifact(button, storageKey)
+  local inner = button[storageKey .. "Inner"]
+  if inner then
+    inner:Hide()
+    inner:SetParent(nil)
+    button[storageKey .. "Inner"] = nil
+  end
+end
+
+local function ApplyIconBorderLayout(border, anchor, scale)
   if not border or not anchor then
     return
   end
 
-  local iconSize = anchor:GetWidth()
-  if not iconSize or iconSize <= 0 then
-    iconSize = anchor:GetHeight() or 37
+  border:ClearAllPoints()
+  border:SetPoint("TOPLEFT", anchor, "TOPLEFT", 0, 0)
+  border:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", 0, 0)
+
+  if border.SetBackdrop then
+    border:SetBackdrop({
+      edgeFile = BORDER_EDGE_FILE,
+      edgeSize = Util.GetIconBorderThickness(scale),
+    })
   end
 
-  local borderSize = iconSize * Util.GetIconBorderScale()
-  border:ClearAllPoints()
-  border:SetSize(borderSize, borderSize)
-  border:SetPoint("CENTER", anchor, "CENTER")
-
-  if border.teaBorderColor and border.SetVertexColor then
-    border:SetVertexColor(border.teaBorderColor[1], border.teaBorderColor[2], border.teaBorderColor[3], border.teaBorderColor[4] or 1)
+  if border.teaBorderColor and border.SetBackdropBorderColor then
+    local color = border.teaBorderColor
+    border:SetBackdropBorderColor(color[1], color[2], color[3], color[4] or BORDER_ALPHA)
   end
 end
 
-function Util.EnsureRoundedIconBorder(button, storageKey, drawLayer, drawSubLevel)
+function Util.EnsureRoundedIconBorder(button, storageKey, levelOffset)
   if not button then
     return nil
   end
 
+  CleanupBorderArtifact(button, storageKey)
+
   local existing = button[storageKey]
   if existing then
-    if existing.SetVertexColor then
+    if existing.SetBackdrop then
+      ApplyIconBorderLayout(existing, button.icon or button, 1)
       return existing
     end
 
@@ -106,9 +123,9 @@ function Util.EnsureRoundedIconBorder(button, storageKey, drawLayer, drawSubLeve
   end
 
   local anchor = button.icon or button
-  local border = button:CreateTexture(nil, drawLayer or "OVERLAY", nil, drawSubLevel or 2)
-  border:SetTexture(BORDER_TEXTURE)
-  ApplyRoundedIconBorderLayout(border, anchor)
+  local border = CreateFrame("Frame", nil, button, BackdropTemplateMixin and "BackdropTemplate")
+  border:SetFrameLevel(button:GetFrameLevel() + (levelOffset or 3))
+  ApplyIconBorderLayout(border, anchor, 1)
   border:Hide()
   button[storageKey] = border
   return border
@@ -119,23 +136,37 @@ function Util.LayoutRoundedIconBorder(button, storageKey, scale)
     return
   end
 
-  local anchor = button.icon or button
-  ApplyRoundedIconBorderLayout(button[storageKey], anchor)
+  local border = button[storageKey]
+  if not border.SetBackdrop then
+    return
+  end
+
+  ApplyIconBorderLayout(border, button.icon or button, scale)
 end
 
-function Util.SetRoundedIconBorderColor(border, r, g, b, show)
+function Util.SetRoundedIconBorderColor(border, r, g, b, show, alpha)
   if not border then
     return
   end
 
-  if show and r and border.SetVertexColor then
-    border.teaBorderColor = { r, g, b, 1 }
-    border:SetVertexColor(r, g, b, 1)
+  alpha = alpha or BORDER_ALPHA
+
+  if show and r and border.SetBackdropBorderColor then
+    border.teaBorderColor = { r, g, b, alpha }
+    border:SetBackdropBorderColor(r, g, b, alpha)
     border:Show()
   else
     border.teaBorderColor = nil
     border:Hide()
   end
+end
+
+function Util.SetButtonRoundedIconBorderColor(button, storageKey, r, g, b, show, alpha)
+  if not button then
+    return
+  end
+
+  Util.SetRoundedIconBorderColor(button[storageKey], r, g, b, show, alpha)
 end
 
 Tea_Util = Util

@@ -23,6 +23,7 @@ local defaults = {
     columns = 8,
     slotSize = 37,
     slotPadding = 2,
+    greyJunkIcons = true,
   },
 }
 

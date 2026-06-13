@@ -8,12 +8,18 @@ local SIDE_OFFSET = 12
 local MONEY_BAR_HEIGHT = 28
 local BOTTOM_PADDING = 14
 local BASE_SLOT_SIZE = 37
+local ITEM_QUALITY_POOR = (Enum and Enum.ItemQuality and Enum.ItemQuality.Poor) or 0
+local ITEM_QUALITY_COMMON = (Enum and Enum.ItemQuality and (Enum.ItemQuality.Common or Enum.ItemQuality.Standard)) or 1
+local QUALITY_BORDER_ALPHA_GREY = 0.6
+local QUALITY_BORDER_ALPHA_WHITE = 0.3
+local QUALITY_BORDER_ALPHA_COLORED = 0.88
 local GetItemQualityColor = (C_Item and C_Item.GetItemQualityColor) or _G.GetItemQualityColor
 local HIGHLIGHT_R, HIGHLIGHT_G, HIGHLIGHT_B = 0.45, 0.65, 0.88
 local HIGHLIGHT_BAG_R, HIGHLIGHT_BAG_G, HIGHLIGHT_BAG_B = 0.58, 0.78, 0.98
 local HIGHLIGHT_BAG_ALPHA = 0.58
 local HIGHLIGHT_SLOT_ALPHA = 0.2
 local HIGHLIGHT_DIM_ALPHA = 0.6
+local GREY_JUNK_DIM_ALPHA = 0.35
 
 local SECTION_DEFS = {
   { id = "bags", title = "Bags", order = 1 },
@@ -31,7 +37,6 @@ local bagContainers = {}
 local sectionHeaders = {}
 local highlightedBagID
 local highlightBagSlots = false
-local highlightLeaveToken = 0
 local lastSlotCount = 0
 local lastLayoutKey = ""
 local lastSettingsKey = ""
@@ -204,52 +209,29 @@ local function EnsureSlotHighlight(button)
   button.TeaBagHighlight = highlight
 end
 
+local function GetSlotIconAlpha(button, hoverAlpha)
+  if button.teaItemQuality == ITEM_QUALITY_POOR and GetBagSettings().greyJunkIcons then
+    return math.min(hoverAlpha, GREY_JUNK_DIM_ALPHA)
+  end
+
+  return hoverAlpha
+end
+
 local function UpdateSlotHighlight(button)
   EnsureSlotHighlight(button)
 
   if highlightedBagID and highlightBagSlots and button.bagID == highlightedBagID then
     button.TeaBagHighlight:Show()
     if button.icon then
-      button.icon:SetAlpha(1)
+      button.icon:SetAlpha(GetSlotIconAlpha(button, 1))
     end
   else
     button.TeaBagHighlight:Hide()
     if button.icon then
-      button.icon:SetAlpha(highlightedBagID and highlightBagSlots and HIGHLIGHT_DIM_ALPHA or 1)
+      local hoverAlpha = highlightedBagID and highlightBagSlots and HIGHLIGHT_DIM_ALPHA or 1
+      button.icon:SetAlpha(GetSlotIconAlpha(button, hoverAlpha))
     end
   end
-end
-
-local function GetBagHighlightTarget()
-  local focus = GetMouseFocus and GetMouseFocus()
-  while focus do
-    if focus.bagID then
-      return focus, focus.bagID
-    end
-    for _, bagButton in ipairs(equippedBagButtons) do
-      if focus == bagButton and bagButton:IsShown() then
-        return bagButton, bagButton.bagID
-      end
-    end
-    focus = focus.GetParent and focus:GetParent()
-  end
-end
-
-local function ShouldClearBagHighlight()
-  return GetBagHighlightTarget() == nil
-end
-
-local function ScheduleClearBagHighlight()
-  highlightLeaveToken = highlightLeaveToken + 1
-  local token = highlightLeaveToken
-  C_Timer.After(0, function()
-    if token ~= highlightLeaveToken then
-      return
-    end
-    if ShouldClearBagHighlight() then
-      SetHighlightedBag(nil)
-    end
-  end)
 end
 
 local function UpdateEquippedBagHighlights()
@@ -263,7 +245,7 @@ local function UpdateEquippedBagHighlights()
       else
         button.border:SetVertexColor(1, 1, 1, 0.15)
         if button.icon then
-          button.icon:SetAlpha(highlightedBagID and HIGHLIGHT_DIM_ALPHA or 1)
+          button.icon:SetAlpha(highlightedBagID and highlightBagSlots and HIGHLIGHT_DIM_ALPHA or 1)
         end
       end
     end
@@ -287,6 +269,10 @@ local function SetHighlightedBag(bagID, highlightSlots)
   highlightBagSlots = bagID ~= nil and highlightSlots == true
   UpdateSlotHighlights()
   UpdateEquippedBagHighlights()
+end
+
+local function ClearBagHighlight()
+  SetHighlightedBag(nil)
 end
 
 local function GetBagFamily(bag)
@@ -371,8 +357,62 @@ local function GetBagContainer(bagID)
   return bagContainers[bagID]
 end
 
+local function GetSlotQualityBorderColor(quality)
+  if quality == nil then
+    return nil
+  end
+
+  if quality == ITEM_QUALITY_POOR then
+    return 0.62, 0.62, 0.62
+  end
+
+  if quality == ITEM_QUALITY_COMMON then
+    return 1, 1, 1
+  end
+
+  if BAG_ITEM_QUALITY_COLORS and BAG_ITEM_QUALITY_COLORS[quality] then
+    local color = BAG_ITEM_QUALITY_COLORS[quality]
+    return color.r, color.g, color.b
+  end
+
+  if GetItemQualityColor then
+    return GetItemQualityColor(quality)
+  end
+end
+
+local function GetSlotQualityBorderAlpha(quality)
+  if quality == ITEM_QUALITY_POOR then
+    return QUALITY_BORDER_ALPHA_GREY
+  end
+
+  if quality == ITEM_QUALITY_COMMON then
+    return QUALITY_BORDER_ALPHA_WHITE
+  end
+
+  return QUALITY_BORDER_ALPHA_COLORED
+end
+
+local function ApplySlotIconAppearance(button, quality, hasItem)
+  local icon = button.icon
+  if not icon then
+    return
+  end
+
+  button.teaItemQuality = hasItem and quality or nil
+
+  if icon.SetDesaturated then
+    local greyOut = hasItem
+      and GetBagSettings().greyJunkIcons
+      and quality == ITEM_QUALITY_POOR
+
+    icon:SetDesaturated(greyOut)
+  end
+
+  icon:SetVertexColor(1, 1, 1)
+end
+
 local function EnsureQualityBorder(button)
-  Tea_Util.EnsureRoundedIconBorder(button, "TeaQualityBorder", "OVERLAY", 2)
+  Tea_Util.EnsureRoundedIconBorder(button, "TeaQualityBorder")
 end
 
 local function ApplySlotQualityBorder(button, quality, hasItem)
@@ -383,18 +423,14 @@ local function ApplySlotQualityBorder(button, quality, hasItem)
   end
 
   if not hasItem then
-    Tea_Util.SetRoundedIconBorderColor(button.TeaQualityBorder, nil, nil, nil, false)
+    Tea_Util.SetButtonRoundedIconBorderColor(button, "TeaQualityBorder", nil, nil, nil, false)
     return
   end
 
-  local r, g, b
-  if quality and BAG_ITEM_QUALITY_COLORS and BAG_ITEM_QUALITY_COLORS[quality] then
-    r, g, b = BAG_ITEM_QUALITY_COLORS[quality].r, BAG_ITEM_QUALITY_COLORS[quality].g, BAG_ITEM_QUALITY_COLORS[quality].b
-  elseif quality and GetItemQualityColor then
-    r, g, b = GetItemQualityColor(quality)
-  end
+  local r, g, b = GetSlotQualityBorderColor(quality)
+  local alpha = GetSlotQualityBorderAlpha(quality)
 
-  Tea_Util.SetRoundedIconBorderColor(button.TeaQualityBorder, r, g, b, r ~= nil)
+  Tea_Util.SetButtonRoundedIconBorderColor(button, "TeaQualityBorder", r, g, b, r ~= nil, alpha)
 end
 
 local function UpdateSlot(button)
@@ -437,12 +473,17 @@ local function UpdateSlot(button)
     CooldownFrame_Set(button.Cooldown, start, duration, enable)
   end
 
-  UpdateSlotHighlight(button)
   ApplySlotButtonSize(button, GetSlotSize())
+  ApplySlotIconAppearance(button, quality, texture ~= nil)
+  UpdateSlotHighlight(button)
   ApplySlotQualityBorder(button, quality, texture ~= nil)
 
   if Tea_UpdateTrackBorder then
     Tea_UpdateTrackBorder(button, itemID)
+  end
+
+  if button.TeaQualityBorder and button.TeaQualityBorder.teaBorderColor then
+    button.TeaQualityBorder:Show()
   end
 end
 
@@ -508,13 +549,12 @@ local function ShowSlotTooltip(self)
 end
 
 local function OnSlotEnter(self)
-  highlightLeaveToken = highlightLeaveToken + 1
   SetHighlightedBag(self.bagID, false)
   ShowSlotTooltip(self)
 end
 
 local function OnSlotLeave(self)
-  ScheduleClearBagHighlight()
+  ClearBagHighlight()
 
   if ContainerFrameItemButton_OnLeave then
     ContainerFrameItemButton_OnLeave(self)
@@ -579,12 +619,11 @@ local function CreateEquippedBagButton(index)
   button.border = border
 
   button:SetScript("OnEnter", function(self)
-    highlightLeaveToken = highlightLeaveToken + 1
     SetHighlightedBag(self.bagID, true)
     ShowEquippedBagTooltip(self)
   end)
   button:SetScript("OnLeave", function(self)
-    ScheduleClearBagHighlight()
+    ClearBagHighlight()
     GameTooltip:Hide()
   end)
 
@@ -792,6 +831,97 @@ local function CloseBlizzardBags()
   end
 end
 
+local origOpenAllBags
+local origOpenBag
+local origOpenBackpack
+local origGenerateContainerFrame
+
+local function GuardBlizzardBagFrame(bagFrame)
+  if not bagFrame or bagFrame.teaBagGuarded then
+    return
+  end
+
+  bagFrame.teaBagGuarded = true
+  bagFrame:HookScript("OnShow", function(self)
+    if IsEnabled() then
+      self:Hide()
+    end
+  end)
+end
+
+local function GuardAllBlizzardBagFrames()
+  for i = 1, NUM_CONTAINER_FRAMES do
+    GuardBlizzardBagFrame(_G["ContainerFrame" .. i])
+  end
+
+  if ContainerFrameCombinedBags then
+    GuardBlizzardBagFrame(ContainerFrameCombinedBags)
+  end
+end
+
+local function SuppressDefaultBags(frame)
+  if not IsEnabled() then
+    return false
+  end
+
+  if frame and FRAME_THAT_OPENED_BAGS == nil then
+    FRAME_THAT_OPENED_BAGS = frame:GetName()
+  end
+
+  CloseBlizzardBags()
+  return true
+end
+
+local function SetupBlizzardBagSuppression()
+  GuardAllBlizzardBagFrames()
+
+  if OpenAllBags and not SetupBlizzardBagSuppression.openAllHooked then
+    origOpenAllBags = OpenAllBags
+    _G.OpenAllBags = function(frame)
+      if SuppressDefaultBags(frame) then
+        return
+      end
+      origOpenAllBags(frame)
+    end
+    SetupBlizzardBagSuppression.openAllHooked = true
+  end
+
+  if OpenBag and not SetupBlizzardBagSuppression.openBagHooked then
+    origOpenBag = OpenBag
+    _G.OpenBag = function(id, force)
+      if IsEnabled() then
+        CloseBlizzardBags()
+        return
+      end
+      origOpenBag(id, force)
+    end
+    SetupBlizzardBagSuppression.openBagHooked = true
+  end
+
+  if OpenBackpack and not SetupBlizzardBagSuppression.openBackpackHooked then
+    origOpenBackpack = OpenBackpack
+    _G.OpenBackpack = function()
+      if IsEnabled() then
+        CloseBlizzardBags()
+        return
+      end
+      origOpenBackpack()
+    end
+    SetupBlizzardBagSuppression.openBackpackHooked = true
+  end
+
+  if ContainerFrame_GenerateFrame and not SetupBlizzardBagSuppression.generateHooked then
+    origGenerateContainerFrame = ContainerFrame_GenerateFrame
+    _G.ContainerFrame_GenerateFrame = function(frame, size, id)
+      if IsEnabled() then
+        return
+      end
+      origGenerateContainerFrame(frame, size, id)
+    end
+    SetupBlizzardBagSuppression.generateHooked = true
+  end
+end
+
 function Tea_BagIsOpen()
   return frame and frame:IsShown()
 end
@@ -849,21 +979,43 @@ end
 local eventFrame = CreateFrame("Frame")
 eventFrame:RegisterEvent("BAG_UPDATE_DELAYED")
 eventFrame:RegisterEvent("PLAYER_LOGIN")
+eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
 eventFrame:RegisterEvent("PLAYER_MONEY")
+eventFrame:RegisterEvent("MERCHANT_SHOW")
 
 eventFrame:SetScript("OnEvent", function(_, event)
   if event == "BAG_UPDATE_DELAYED" then
     OnBagUpdate()
   elseif event == "PLAYER_MONEY" then
     UpdateMoney()
-  elseif event == "PLAYER_LOGIN" then
-    local origToggleBackpack = ToggleBackpack
-    ToggleBackpack = function()
-      if IsEnabled() then
-        Tea_ToggleBag()
-      else
-        origToggleBackpack()
-      end
+  elseif event == "MERCHANT_SHOW" then
+    if IsEnabled() then
+      SuppressDefaultBags(MerchantFrame)
     end
+  elseif event == "PLAYER_LOGIN" then
+    if not eventFrame.backpackHooked and ToggleBackpack then
+      local origToggleBackpack = ToggleBackpack
+      ToggleBackpack = function()
+        if IsEnabled() then
+          Tea_ToggleBag()
+        else
+          origToggleBackpack()
+        end
+      end
+      eventFrame.backpackHooked = true
+    end
+
+    SetupBlizzardBagSuppression()
+  elseif event == "PLAYER_ENTERING_WORLD" then
+    SetupBlizzardBagSuppression()
   end
 end)
+
+local function ScheduleBagSuppressionSetup()
+  SetupBlizzardBagSuppression()
+  C_Timer.After(0, SetupBlizzardBagSuppression)
+end
+
+if UnitName("player") then
+  ScheduleBagSuppressionSetup()
+end
