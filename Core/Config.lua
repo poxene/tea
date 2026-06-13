@@ -7,6 +7,7 @@ local defaults = {
     repairWarning = true,
     itemTrack = true,
     oneBag = true,
+    resourceBars = false,
   },
   tooltip = {
     showVendorPrice = true,
@@ -28,6 +29,14 @@ local defaults = {
   minimap = {
     show = true,
     angle = 220,
+  },
+  resourceBars = {
+    width = 200,
+    height = 48,
+    point = "CENTER",
+    relativePoint = "CENTER",
+    x = -320,
+    y = -180,
   },
 }
 

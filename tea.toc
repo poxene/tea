@@ -15,5 +15,6 @@ Modules/VendorTrash.lua
 Modules/RepairWarning.lua
 Modules/ItemTrack.lua
 Modules/OneBag.lua
+Modules/ResourceBars.lua
 Core/Slash.lua
 Core/Init.lua

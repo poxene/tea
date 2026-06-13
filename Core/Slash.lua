@@ -52,6 +52,7 @@ SlashCmdList["TEA"] = function(msg)
     Tea_Print("repairWarning: " .. OnOff(db.modules.repairWarning))
     Tea_Print("itemTrack: " .. OnOff(db.modules.itemTrack))
     Tea_Print("oneBag: " .. OnOff(db.modules.oneBag))
+    Tea_Print("resourceBars: " .. OnOff(db.modules.resourceBars))
     Tea_Print("tooltip shift-only: " .. OnOff(db.tooltip.requireShift))
     Tea_Print("tracked items: " .. #Tea_GetTrackedItemIDs())
     return

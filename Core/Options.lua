@@ -36,6 +36,15 @@ local TABS = {
           end
         end,
       },
+      {
+        label = "Floating health and power bars",
+        path = { "modules", "resourceBars" },
+        onChange = function()
+          if Tea_RefreshResourceBars then
+            Tea_RefreshResourceBars()
+          end
+        end,
+      },
     },
   },
   {
