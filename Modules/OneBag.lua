@@ -3,9 +3,17 @@ local SLOT_PADDING = 4
 local COLUMNS = 8
 local HEADER_HEIGHT = 20
 local SECTION_GAP = 10
-local TOP_OFFSET = 40
+local BAG_BAR_HEIGHT = 30
+local BAG_ICON_SIZE = 28
+local BAG_ICON_GAP = 6
+local CONTENT_TOP = 68
 local SIDE_OFFSET = 12
 local ITEM_QUALITY_COMMON = (Enum and Enum.ItemQuality and (Enum.ItemQuality.Common or Enum.ItemQuality.Standard)) or 1
+local HIGHLIGHT_R, HIGHLIGHT_G, HIGHLIGHT_B = 0.45, 0.65, 0.88
+local HIGHLIGHT_BAG_R, HIGHLIGHT_BAG_G, HIGHLIGHT_BAG_B = 0.58, 0.78, 0.98
+local HIGHLIGHT_BAG_ALPHA = 0.58
+local HIGHLIGHT_SLOT_ALPHA = 0.2
+local HIGHLIGHT_DIM_ALPHA = 0.6
 
 local SECTION_DEFS = {
   { id = "bags", title = "Bags", order = 1 },
@@ -15,14 +23,151 @@ local SECTION_DEFS = {
 }
 
 local frame
+local bagBarFrame
 local slotButtons = {}
+local equippedBagButtons = {}
 local bagContainers = {}
 local sectionHeaders = {}
+local highlightedBagID
+local highlightBagSlots = false
+local highlightLeaveToken = 0
 local lastSlotCount = 0
 local lastLayoutKey = ""
 
 local function IsEnabled()
   return Tea_GetDB().modules.oneBag
+end
+
+local function GetBagInventorySlot(bagID)
+  if C_Container and C_Container.ContainerIDToInventoryID then
+    return C_Container.ContainerIDToInventoryID(bagID)
+  end
+  if bagID == BACKPACK_CONTAINER then
+    return 23
+  end
+  return bagID + 19
+end
+
+local function GetEquippedBags()
+  local bags = {}
+  for bag = BACKPACK_CONTAINER, NUM_BAG_FRAMES do
+    local numSlots = Tea_Util.GetContainerNumSlots(bag) or 0
+    if bag == BACKPACK_CONTAINER or numSlots > 0 then
+      table.insert(bags, { bagID = bag, numSlots = numSlots })
+    end
+  end
+  return bags
+end
+
+local function GetBagIconTexture(bagID)
+  local inventorySlot = GetBagInventorySlot(bagID)
+  local texture = GetInventoryItemTexture("player", inventorySlot)
+  if texture then
+    return texture
+  end
+  if bagID == BACKPACK_CONTAINER then
+    return "Interface\\Buttons\\Button-Backpack-Up"
+  end
+end
+
+local function EnsureSlotHighlight(button)
+  if button.TeaBagHighlight then
+    return
+  end
+
+  local anchor = button.icon or button
+  local highlight = button:CreateTexture(nil, "OVERLAY", nil, 1)
+  highlight:SetPoint("TOPLEFT", anchor, "TOPLEFT", -2, 2)
+  highlight:SetPoint("BOTTOMRIGHT", anchor, "BOTTOMRIGHT", 2, -2)
+  highlight:SetTexture("Interface\\Buttons\\WHITE8x8")
+  highlight:SetVertexColor(HIGHLIGHT_R, HIGHLIGHT_G, HIGHLIGHT_B, HIGHLIGHT_SLOT_ALPHA)
+  highlight:Hide()
+  button.TeaBagHighlight = highlight
+end
+
+local function UpdateSlotHighlight(button)
+  EnsureSlotHighlight(button)
+
+  if highlightedBagID and highlightBagSlots and button.bagID == highlightedBagID then
+    button.TeaBagHighlight:Show()
+    if button.icon then
+      button.icon:SetAlpha(1)
+    end
+  else
+    button.TeaBagHighlight:Hide()
+    if button.icon then
+      button.icon:SetAlpha(highlightedBagID and highlightBagSlots and HIGHLIGHT_DIM_ALPHA or 1)
+    end
+  end
+end
+
+local function GetBagHighlightTarget()
+  local focus = GetMouseFocus and GetMouseFocus()
+  while focus do
+    if focus.bagID then
+      return focus, focus.bagID
+    end
+    for _, bagButton in ipairs(equippedBagButtons) do
+      if focus == bagButton and bagButton:IsShown() then
+        return bagButton, bagButton.bagID
+      end
+    end
+    focus = focus.GetParent and focus:GetParent()
+  end
+end
+
+local function ShouldClearBagHighlight()
+  return GetBagHighlightTarget() == nil
+end
+
+local function ScheduleClearBagHighlight()
+  highlightLeaveToken = highlightLeaveToken + 1
+  local token = highlightLeaveToken
+  C_Timer.After(0, function()
+    if token ~= highlightLeaveToken then
+      return
+    end
+    if ShouldClearBagHighlight() then
+      SetHighlightedBag(nil)
+    end
+  end)
+end
+
+local function UpdateEquippedBagHighlights()
+  for _, button in ipairs(equippedBagButtons) do
+    if button:IsShown() then
+      if highlightedBagID and button.bagID == highlightedBagID then
+        button.border:SetVertexColor(HIGHLIGHT_BAG_R, HIGHLIGHT_BAG_G, HIGHLIGHT_BAG_B, HIGHLIGHT_BAG_ALPHA)
+        if button.icon then
+          button.icon:SetAlpha(1)
+        end
+      else
+        button.border:SetVertexColor(1, 1, 1, 0.15)
+        if button.icon then
+          button.icon:SetAlpha(highlightedBagID and HIGHLIGHT_DIM_ALPHA or 1)
+        end
+      end
+    end
+  end
+end
+
+local function UpdateSlotHighlights()
+  for _, button in ipairs(slotButtons) do
+    if button:IsShown() then
+      UpdateSlotHighlight(button)
+    end
+  end
+end
+
+local function SetHighlightedBag(bagID, highlightSlots)
+  if highlightedBagID == bagID and highlightBagSlots == (bagID ~= nil and highlightSlots == true) then
+    return
+  end
+
+  highlightedBagID = bagID
+  highlightBagSlots = bagID ~= nil and highlightSlots == true
+  UpdateSlotHighlights()
+  UpdateEquippedBagHighlights()
 end
 
 local function GetBagFamily(bag)
@@ -76,7 +221,9 @@ end
 local function GetLayoutKey()
   local parts = {}
   for bag = BACKPACK_CONTAINER, NUM_BAG_FRAMES do
-    table.insert(parts, bag .. ":" .. GetBagFamily(bag) .. ":" .. (Tea_Util.GetContainerNumSlots(bag) or 0))
+    local invSlot = GetBagInventorySlot(bag)
+    local bagItemID = GetInventoryItemID("player", invSlot) or 0
+    table.insert(parts, bag .. ":" .. GetBagFamily(bag) .. ":" .. (Tea_Util.GetContainerNumSlots(bag) or 0) .. ":" .. bagItemID)
   end
   return table.concat(parts, ",")
 end
@@ -152,12 +299,24 @@ local function UpdateSlot(button)
   if Tea_UpdateTrackBorder then
     Tea_UpdateTrackBorder(button, itemID)
   end
+
+  UpdateSlotHighlight(button)
+end
+
+local function RefreshEquippedBags()
+  for _, button in ipairs(equippedBagButtons) do
+    if button:IsShown() and button.bagID then
+      button.icon:SetTexture(GetBagIconTexture(button.bagID))
+    end
+  end
 end
 
 local function RefreshBag()
   if not frame then
     return
   end
+
+  RefreshEquippedBags()
 
   local mouseFocus = GetMouseFocus and GetMouseFocus()
 
@@ -166,6 +325,9 @@ local function RefreshBag()
       UpdateSlot(button)
     end
   end
+
+  UpdateSlotHighlights()
+  UpdateEquippedBagHighlights()
 end
 
 function Tea_BagRefreshTracks()
@@ -202,10 +364,14 @@ local function ShowSlotTooltip(self)
 end
 
 local function OnSlotEnter(self)
+  highlightLeaveToken = highlightLeaveToken + 1
+  SetHighlightedBag(self.bagID, false)
   ShowSlotTooltip(self)
 end
 
 local function OnSlotLeave(self)
+  ScheduleClearBagHighlight()
+
   if ContainerFrameItemButton_OnLeave then
     ContainerFrameItemButton_OnLeave(self)
   else
@@ -231,6 +397,82 @@ local function CreateSlotButton(index, bagID)
   return button
 end
 
+local function ShowEquippedBagTooltip(self)
+  local inventorySlot = GetBagInventorySlot(self.bagID)
+  GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
+  if GetInventoryItemLink("player", inventorySlot) then
+    GameTooltip:SetInventoryItem("player", inventorySlot)
+  elseif self.bagID == BACKPACK_CONTAINER then
+    GameTooltip:SetText("Backpack")
+  else
+    GameTooltip:SetText("Bag")
+  end
+  GameTooltip:Show()
+end
+
+local function CreateEquippedBagButton(index)
+  local button = CreateFrame("Button", "TeaEquippedBag" .. index, bagBarFrame)
+  button:SetSize(BAG_ICON_SIZE, BAG_ICON_SIZE)
+
+  local icon = button:CreateTexture(nil, "ARTWORK")
+  icon:SetAllPoints()
+  button.icon = icon
+
+  local border = button:CreateTexture(nil, "OVERLAY")
+  border:SetPoint("TOPLEFT", icon, "TOPLEFT", -1, 1)
+  border:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 1, -1)
+  border:SetTexture("Interface\\Buttons\\WHITE8x8")
+  border:SetVertexColor(1, 1, 1, 0.15)
+  button.border = border
+
+  button:SetScript("OnEnter", function(self)
+    highlightLeaveToken = highlightLeaveToken + 1
+    SetHighlightedBag(self.bagID, true)
+    ShowEquippedBagTooltip(self)
+  end)
+  button:SetScript("OnLeave", function(self)
+    ScheduleClearBagHighlight()
+    GameTooltip:Hide()
+  end)
+
+  return button
+end
+
+local function LayoutEquippedBags()
+  if not bagBarFrame then
+    bagBarFrame = CreateFrame("Frame", nil, frame)
+    bagBarFrame:SetPoint("TOPLEFT", frame, "TOPLEFT", SIDE_OFFSET, -30)
+    bagBarFrame:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -SIDE_OFFSET, -30)
+    bagBarFrame:SetHeight(BAG_BAR_HEIGHT)
+  end
+
+  local equippedBags = GetEquippedBags()
+
+  for index, bagInfo in ipairs(equippedBags) do
+    local button = equippedBagButtons[index]
+    if not button then
+      button = CreateEquippedBagButton(index)
+      equippedBagButtons[index] = button
+    end
+
+    button.bagID = bagInfo.bagID
+    button.icon:SetTexture(GetBagIconTexture(bagInfo.bagID))
+    button:ClearAllPoints()
+
+    if index == 1 then
+      button:SetPoint("LEFT", bagBarFrame, "LEFT", 0, 0)
+    else
+      button:SetPoint("LEFT", equippedBagButtons[index - 1], "RIGHT", BAG_ICON_GAP, 0)
+    end
+
+    button:Show()
+  end
+
+  for index = #equippedBags + 1, #equippedBagButtons do
+    equippedBagButtons[index]:Hide()
+  end
+end
+
 local function HideSectionHeaders()
   for _, header in ipairs(sectionHeaders) do
     header:Hide()
@@ -251,10 +493,11 @@ end
 local function LayoutSlots()
   local sections = GetBagSections()
   local gridWidth = COLUMNS * (SLOT_SIZE + SLOT_PADDING) + SLOT_PADDING
-  local y = -TOP_OFFSET
+  local y = -CONTENT_TOP
   local buttonIndex = 0
   local headerIndex = 0
 
+  LayoutEquippedBags()
   HideSectionHeaders()
 
   for _, section in ipairs(sections) do
@@ -304,6 +547,8 @@ local function LayoutSlots()
   frame:SetSize(gridWidth + 24, math.abs(y) + 24)
   lastSlotCount = #GetBagSlots()
   lastLayoutKey = GetLayoutKey()
+  UpdateSlotHighlights()
+  UpdateEquippedBagHighlights()
 end
 
 local function BuildFrame()
@@ -384,6 +629,7 @@ end
 
 function Tea_CloseBag()
   if frame then
+    SetHighlightedBag(nil)
     frame:Hide()
   end
 end
