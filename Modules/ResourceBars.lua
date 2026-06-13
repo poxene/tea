@@ -261,16 +261,30 @@ local function ApplyFrameSettings()
   UpdateBars()
 end
 
-local function CreateBars()
+local function GetOrCreateFrame()
+  if frame and healthBar and powerBar and resizeGrip then
+    return frame
+  end
+
   if frame then
-    return
+    frame:Hide()
+    frame:SetParent(nil)
+    frame = nil
+    healthBar = nil
+    healthText = nil
+    powerBar = nil
+    powerText = nil
+    resizeGrip = nil
   end
 
   local backdropTemplate = BackdropTemplateMixin and "BackdropTemplate" or nil
-  frame = CreateFrame("Frame", "TeaResourceBarsFrame", UIParent, backdropTemplate)
+  frame = CreateFrame("Frame", nil, UIParent, backdropTemplate)
+  frame:SetFrameStrata("HIGH")
   frame:SetClampedToScreen(true)
   frame:SetMovable(true)
-  frame:SetResizable(true)
+  if frame.SetResizable then
+    frame:SetResizable(true)
+  end
   frame:EnableMouse(true)
   frame:RegisterForDrag("LeftButton")
 
@@ -342,24 +356,32 @@ local function CreateBars()
     end
   end)
 
-  ApplyFrameSettings()
-  ApplyLockState()
+  return frame
 end
 
-function Tea_RefreshResourceBars()
+local function PlayerIsReady()
+  return UnitGUID("player") ~= nil
+end
+
+local function TryShowResourceBars()
   if not IsEnabled() then
     if frame then
       frame:Hide()
     end
-    return
+    return true
   end
 
-  CreateBars()
+  if not PlayerIsReady() then
+    return false
+  end
+
+  GetOrCreateFrame()
   ApplyFrameSettings()
   ApplyLockState()
   frame:Show()
   updateElapsed = 0
   UpdateBars()
+  return frame:IsShown()
 end
 
 local function OnPlayerResourceEvent()
@@ -373,25 +395,63 @@ local function OnPlayerResourceEvent()
   UpdateBars()
 end
 
-local eventFrame = CreateFrame("Frame")
-eventFrame:RegisterEvent("ADDON_LOADED")
-eventFrame:RegisterEvent("PLAYER_LOGIN")
-eventFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
-RegisterPlayerUnitEvents(eventFrame)
+function Tea_RefreshResourceBars()
+  TryShowResourceBars()
+end
 
-eventFrame:SetScript("OnEvent", function(_, event, arg1)
-  if event == "ADDON_LOADED" and arg1 == ADDON_NAME then
+local bootstrapFrame = CreateFrame("Frame")
+local bootstrapTicks = 0
+local MAX_BOOTSTRAP_TICKS = 100
+
+local function StartBootstrap()
+  bootstrapTicks = MAX_BOOTSTRAP_TICKS
+  bootstrapFrame:Show()
+end
+
+bootstrapFrame:Hide()
+bootstrapFrame:SetScript("OnUpdate", function(self)
+  if bootstrapTicks <= 0 then
+    self:Hide()
     return
   end
 
-  if event == "PLAYER_LOGIN" or event == "PLAYER_ENTERING_WORLD" then
-    Tea_RefreshResourceBars()
-    return
+  bootstrapTicks = bootstrapTicks - 1
+  if TryShowResourceBars() then
+    bootstrapTicks = 0
+    self:Hide()
   end
+end)
 
-  if not ShouldHandleUnitEvent(arg1) then
+local unitFrame = CreateFrame("Frame")
+RegisterPlayerUnitEvents(unitFrame)
+
+unitFrame:SetScript("OnEvent", function(_, event, unit)
+  if not ShouldHandleUnitEvent(unit) then
     return
   end
 
   OnPlayerResourceEvent()
+end)
+
+local initFrame = CreateFrame("Frame")
+initFrame:RegisterEvent("ADDON_LOADED")
+initFrame:RegisterEvent("PLAYER_LOGIN")
+initFrame:RegisterEvent("PLAYER_ENTERING_WORLD")
+
+initFrame:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
+  if event == "ADDON_LOADED" and arg1 == ADDON_NAME then
+    StartBootstrap()
+    return
+  end
+
+  if event == "PLAYER_LOGIN" then
+    StartBootstrap()
+    return
+  end
+
+  if event == "PLAYER_ENTERING_WORLD" then
+    if arg1 or arg2 then
+      StartBootstrap()
+    end
+  end
 end)

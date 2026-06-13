@@ -3,6 +3,9 @@ local ADDON_NAME = ...
 local PANEL_WIDTH = 320
 local PANEL_HEIGHT = 400
 local FRAME_PADDING = 20
+local TITLE_SIDE_OFFSET = 12
+local TITLE_TOP = -12
+local CLOSE_BUTTON_SIZE = 16
 local TAB_TOP = -40
 local CONTENT_TOP = -68
 local ROW_SPACING = 4
@@ -747,12 +750,14 @@ local function BuildPanel()
 
   tinsert(UISpecialFrames, frame:GetName())
 
-  local title = frame:CreateFontString(nil, "ARTWORK", "GameFontNormalLarge")
-  title:SetPoint("TOP", 0, -16)
+  local title = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+  title:SetPoint("TOPLEFT", TITLE_SIDE_OFFSET, TITLE_TOP)
   title:SetText("tea")
+  title:SetTextColor(0.72, 0.95, 0.68)
 
   local close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
-  close:SetPoint("TOPRIGHT", -4, -4)
+  close:SetSize(CLOSE_BUTTON_SIZE, CLOSE_BUTTON_SIZE)
+  close:SetPoint("TOPRIGHT", -6, -10)
   close:SetScript("OnClick", function()
     frame:Hide()
   end)
