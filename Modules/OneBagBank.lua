@@ -20,7 +20,6 @@ local NUM_BANK_BAGS = NUM_BANKBAGSLOTS or 7
 local NUM_PLAYER_BAG_SLOTS = NUM_BAG_SLOTS or NUM_BAG_FRAMES or 4
 local FIRST_BANK_BAG_ID = NUM_PLAYER_BAG_SLOTS + 1
 local LAST_BANK_BAG_ID = FIRST_BANK_BAG_ID + NUM_BANK_BAGS - 1
-local PURCHASE_SLOT_TEXTURE = "Interface\\Buttons\\UI-PlusButton-Hilight"
 local EMPTY_BANK_BAG_TEXTURE = "Interface\\PaperDoll\\UI-PaperDoll-Slot-Bag"
 local BOTTOM_BAR_HEIGHT = HEADER_HEIGHT + INVENTORY_BAR_GAP + BAG_BAR_HEIGHT + BOTTOM_BAR_OFFSET
 local BOTTOM_BAR_LEVEL = 30
@@ -42,7 +41,6 @@ local bankBagBarFrame
 local bankSlotButtons = {}
 local bankBagButtons = {}
 local bankBagContainers = {}
-local bankPurchaseButton
 local bankBagsHeader
 local bankSectionHeaders = {}
 local highlightedBankBagID
@@ -273,9 +271,6 @@ local function GetPurchasedBankBagCount()
   return NUM_BANK_BAGS
 end
 
-local function CanPurchaseBankBagSlot()
-  return GetNumBankSlots and NUM_BANK_BAGS and GetNumBankSlots() < NUM_BANK_BAGS
-end
 local function IsFrameOffScreen(target)
   local point, _, _, x, y = target:GetPoint(1)
   if not point or x == nil or y == nil then
@@ -546,6 +541,127 @@ local function ApplyBankBagIcon(button, bagID)
   button.icon:Show()
 end
 
+local function GetNextBankSlotCost()
+  if not GetBankSlotCost or not GetNumBankSlots then
+    return
+  end
+
+  local numSlots = GetNumBankSlots()
+  if type(numSlots) ~= "number" then
+    numSlots = 0
+  end
+
+  local cost = GetBankSlotCost(numSlots)
+  if cost then
+    return cost
+  end
+
+  return GetBankSlotCost(numSlots + 1)
+end
+
+local BANK_SLOT_PURCHASE_DIALOG = "TEA_CONFIRM_BUY_BANK_SLOT"
+local bankSlotPurchaseDialogRegistered = false
+
+local function RegisterBankSlotPurchaseDialog()
+  if bankSlotPurchaseDialogRegistered or not StaticPopupDialogs then
+    return bankSlotPurchaseDialogRegistered
+  end
+
+  StaticPopupDialogs[BANK_SLOT_PURCHASE_DIALOG] = {
+    text = CONFIRM_BUY_BANK_SLOT or "Do you want to purchase a bank bag slot?",
+    button1 = YES,
+    button2 = NO,
+    OnAccept = function()
+      if PurchaseSlot then
+        PurchaseSlot()
+      end
+    end,
+    OnShow = function(dialog)
+      local cost = GetNextBankSlotCost()
+      if not cost or not MoneyFrame_Update then
+        return
+      end
+
+      if dialog.moneyFrame then
+        MoneyFrame_Update(dialog.moneyFrame, cost)
+      elseif dialog.GetName then
+        MoneyFrame_Update(dialog:GetName() .. "MoneyFrame", cost)
+      end
+    end,
+    hasMoneyFrame = 1,
+    timeout = 0,
+    hideOnEscape = 1,
+    whileDead = 1,
+    preferredIndex = STATICPOPUP_NUMDIALOGS,
+  }
+
+  bankSlotPurchaseDialogRegistered = true
+  return true
+end
+
+local function HideBankSlotPurchaseDialog()
+  if StaticPopup_Hide then
+    StaticPopup_Hide(BANK_SLOT_PURCHASE_DIALOG)
+  end
+end
+
+local function ShowBankSlotPurchaseDialog()
+  if not RegisterBankSlotPurchaseDialog() or not StaticPopup_Show then
+    return false
+  end
+
+  if PlaySound then
+    PlaySound(SOUNDKIT and SOUNDKIT.IG_MAINMENU_OPTION or "igMainMenuOption")
+  end
+
+  StaticPopup_Show(BANK_SLOT_PURCHASE_DIALOG)
+  return true
+end
+
+local function ShowUnpurchasedBankBagTooltip(self)
+  GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
+  if BANK_BAG_PURCHASE then
+    GameTooltip:SetText(BANK_BAG_PURCHASE)
+  else
+    GameTooltip:SetText("Purchase Bank Bag Slot")
+  end
+  local cost = GetNextBankSlotCost()
+  if cost then
+    GameTooltip:AddLine("Cost: " .. (GetCoinTextureString and GetCoinTextureString(cost) or tostring(cost)), 1, 1, 1)
+  end
+  GameTooltip:Show()
+end
+
+local function HandleUnpurchasedBankBagClick()
+  if GetNumBankSlots and NUM_BANK_BAGS then
+    local numSlots = GetNumBankSlots()
+    if type(numSlots) == "number" and numSlots >= NUM_BANK_BAGS then
+      return
+    end
+  end
+
+  ShowBankSlotPurchaseDialog()
+end
+
+local function ApplyBankBagBarButton(button, bagIndex)
+  local purchasedCount = GetPurchasedBankBagCount()
+  local isPurchased = bagIndex <= purchasedCount
+  local bagID = FIRST_BANK_BAG_ID + bagIndex - 1
+
+  button.bagIndex = bagIndex
+  button.bagID = bagID
+  button.isPurchased = isPurchased
+
+  if isPurchased then
+    ApplyBankBagIcon(button, bagID)
+  elseif button.icon then
+    local texture = GetBlizzardBankBagButtonTexture(bagIndex) or EMPTY_BANK_BAG_TEXTURE
+    button.icon:SetTexture(texture)
+    button.icon:SetVertexColor(1.0, 0.1, 0.1)
+    button.icon:Show()
+  end
+end
+
 local function GetEquippedBankBags()
   local bags = {}
   local purchased = GetPurchasedBankBagCount()
@@ -719,11 +835,18 @@ local function CreateBankBagButton(index)
   button.border = border
 
   button:SetScript("OnEnter", function(self)
+    if not self.isPurchased then
+      ShowUnpurchasedBankBagTooltip(self)
+      return
+    end
     SetHighlightedBankBag(self.bagID, true)
     ShowBankBagTooltip(self)
   end)
   button:SetScript("OnLeave", function(self)
     GameTooltip:Hide()
+    if not self.isPurchased then
+      return
+    end
     if pinnedBankBagID == self.bagID then
       return
     end
@@ -732,49 +855,27 @@ local function CreateBankBagButton(index)
   button:RegisterForDrag("LeftButton")
   button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
   button:SetScript("OnClick", function(self, mouseButton)
+    if not self.isPurchased then
+      HandleUnpurchasedBankBagClick()
+      return
+    end
     if IsShiftKeyDown and IsShiftKeyDown() then
       TogglePinnedBankBag(self.bagID)
       return
     end
     HandleBankBagClick(self, mouseButton)
   end)
-  button:SetScript("OnDragStart", HandleBankBagPickup)
+  button:SetScript("OnDragStart", function(self)
+    if not self.isPurchased then
+      return
+    end
+    HandleBankBagPickup(self)
+  end)
   button:SetScript("OnReceiveDrag", function(self)
+    if not self.isPurchased then
+      return
+    end
     HandleBankBagClick(self, "LeftButton")
-  end)
-
-  return button
-end
-
-local function ShowBankPurchaseTooltip(self)
-  GameTooltip:SetOwner(self, "ANCHOR_BOTTOMRIGHT")
-  GameTooltip:SetText("Purchase Bank Bag Slot")
-  if GetBankSlotCost and GetNumBankSlots then
-    local cost = GetBankSlotCost(GetNumBankSlots() + 1)
-    if cost then
-      GameTooltip:AddLine("Cost: " .. (GetCoinTextureString and GetCoinTextureString(cost) or tostring(cost)), 1, 1, 1)
-    end
-  end
-  GameTooltip:Show()
-end
-
-local function CreateBankPurchaseButton()
-  local button = CreateFrame("Button", "TeaBankPurchaseButton", bankBagBarFrame)
-  button:SetSize(BAG_ICON_SIZE, BAG_ICON_SIZE)
-
-  local icon = button:CreateTexture(nil, "ARTWORK")
-  icon:SetAllPoints()
-  icon:SetTexture(PURCHASE_SLOT_TEXTURE)
-  button.icon = icon
-
-  button:SetScript("OnClick", function()
-    if PurchaseSlot then
-      PurchaseSlot()
-    end
-  end)
-  button:SetScript("OnEnter", ShowBankPurchaseTooltip)
-  button:SetScript("OnLeave", function()
-    GameTooltip:Hide()
   end)
 
   return button
@@ -785,11 +886,8 @@ local function LayoutBankBagBar()
     bankBagBarFrame = CreateFrame("Frame", nil, bankFrame)
   end
 
-  local equippedBags = GetEquippedBankBags()
-  local bagCount = #equippedBags
-  local showPurchase = CanPurchaseBankBagSlot()
   local slotPadding = GetSlotPadding()
-  local barItemCount = bagCount + (showPurchase and 1 or 0)
+  local barItemCount = NUM_BANK_BAGS
   local barWidth = barItemCount * BAG_ICON_SIZE + math.max(0, barItemCount - 1) * slotPadding
 
   bankBagBarFrame:ClearAllPoints()
@@ -798,48 +896,28 @@ local function LayoutBankBagBar()
   bankBagBarFrame:SetFrameLevel(bankFrame:GetFrameLevel() + BOTTOM_BAR_LEVEL)
   bankBagBarFrame:Show()
 
-  for index, bagInfo in ipairs(equippedBags) do
-    local button = bankBagButtons[index]
+  for bagIndex = 1, NUM_BANK_BAGS do
+    local button = bankBagButtons[bagIndex]
     if not button then
-      button = CreateBankBagButton(index)
-      bankBagButtons[index] = button
+      button = CreateBankBagButton(bagIndex)
+      bankBagButtons[bagIndex] = button
     end
 
-    button.bagID = bagInfo.bagID
-    ApplyBankBagIcon(button, bagInfo.bagID)
+    ApplyBankBagBarButton(button, bagIndex)
     button:SetFrameLevel(bankBagBarFrame:GetFrameLevel() + 1)
     button:ClearAllPoints()
 
-    if index == 1 then
+    if bagIndex == 1 then
       button:SetPoint("BOTTOMLEFT", bankBagBarFrame, "BOTTOMLEFT", 0, 0)
     else
-      button:SetPoint("LEFT", bankBagButtons[index - 1], "RIGHT", slotPadding, 0)
+      button:SetPoint("LEFT", bankBagButtons[bagIndex - 1], "RIGHT", slotPadding, 0)
     end
 
     button:Show()
   end
 
-  for index = bagCount + 1, #bankBagButtons do
+  for index = NUM_BANK_BAGS + 1, #bankBagButtons do
     bankBagButtons[index]:Hide()
-  end
-
-  if showPurchase then
-    if not bankPurchaseButton then
-      bankPurchaseButton = CreateBankPurchaseButton()
-    end
-
-    bankPurchaseButton:SetFrameLevel(bankBagBarFrame:GetFrameLevel() + 1)
-    bankPurchaseButton:ClearAllPoints()
-
-    if bagCount == 0 then
-      bankPurchaseButton:SetPoint("BOTTOMLEFT", bankBagBarFrame, "BOTTOMLEFT", 0, 0)
-    else
-      bankPurchaseButton:SetPoint("LEFT", bankBagButtons[bagCount], "RIGHT", slotPadding, 0)
-    end
-
-    bankPurchaseButton:Show()
-  elseif bankPurchaseButton then
-    bankPurchaseButton:Hide()
   end
 end
 
@@ -955,9 +1033,9 @@ local function LayoutBankSlots()
 end
 
 local function RefreshBankBags()
-  for _, button in ipairs(bankBagButtons) do
-    if button:IsShown() and button.bagID then
-      ApplyBankBagIcon(button, button.bagID)
+  for bagIndex, button in ipairs(bankBagButtons) do
+    if button:IsShown() then
+      ApplyBankBagBarButton(button, bagIndex)
     end
   end
 end
@@ -1115,6 +1193,7 @@ end
 local function EndTeaBankSession()
   bankActive = false
   pinnedBankBagID = nil
+  HideBankSlotPurchaseDialog()
   ClearBankBagHighlight()
   RestoreBlizzardBankUI()
   if bankFrame then
@@ -1130,6 +1209,7 @@ function Tea_CloseBank()
   closingTeaBank = true
   bankActive = false
   pinnedBankBagID = nil
+  HideBankSlotPurchaseDialog()
   ClearBankBagHighlight()
   RestoreBlizzardBankUI()
   if bankFrame then
