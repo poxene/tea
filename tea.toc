@@ -1,11 +1,13 @@
 ## Interface: 11508
 ## Title: tea
 ## Notes: Quality-of-life addon for WoW Classic Era.
-## Version: 0.5.3
+## Version: 0.1.6
 ## Author: tea
+## X-Website: https://github.com/poxene/tea/releases
 ## SavedVariables: TeaDB
 
 Core/Util.lua
+Core/UpdateCheck.lua
 Core/Config.lua
 Core/Track.lua
 Core/Options.lua

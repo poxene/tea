@@ -24,6 +24,7 @@ EOF
 }
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+VERSION_FILE="${PROJECT_DIR}/scripts/tea-version.sh"
 TOC_FILE="${PROJECT_DIR}/tea.toc"
 DIST_DIR="${PROJECT_DIR}/dist"
 ADDON_NAME="$(basename "$PROJECT_DIR")"
@@ -77,14 +78,29 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ ! -f "$VERSION_FILE" ]]; then
+  echo "Error: scripts/tea-version.sh not found in $PROJECT_DIR" >&2
+  exit 1
+fi
+
+# shellcheck source=tea-version.sh
+source "$VERSION_FILE"
+
+if [[ -z "${TEA_VERSION:-}" ]]; then
+  echo "Error: TEA_VERSION is not set in scripts/tea-version.sh" >&2
+  exit 1
+fi
+
+VERSION="$TEA_VERSION"
+
 if [[ ! -f "$TOC_FILE" ]]; then
   echo "Error: tea.toc not found in $PROJECT_DIR" >&2
   exit 1
 fi
 
-VERSION="$(grep '^## Version:' "$TOC_FILE" | awk '{print $3}')"
-if [[ -z "$VERSION" ]]; then
-  echo "Error: could not read version from tea.toc" >&2
+TOC_VERSION="$(grep '^## Version:' "$TOC_FILE" | awk '{print $3}')"
+if [[ "$TOC_VERSION" != "$VERSION" ]]; then
+  echo "Error: tea.toc version (${TOC_VERSION}) does not match TEA_VERSION (${VERSION})" >&2
   exit 1
 fi
 

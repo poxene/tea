@@ -3,10 +3,11 @@ set -euo pipefail
 
 ROOT="$(git rev-parse --show-toplevel)"
 TOC="${ROOT}/tea.toc"
+VERSION_FILE="${ROOT}/scripts/tea-version.sh"
 
 if [[ ! -f "$TOC" ]]; then
   exit 0
 fi
 
 "${ROOT}/scripts/bump-version.sh"
-git add "$TOC"
+git add "$TOC" "$VERSION_FILE"

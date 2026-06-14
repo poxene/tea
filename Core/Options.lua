@@ -1184,6 +1184,15 @@ local function BuildPanel()
   hint:SetPoint("BOTTOM", 0, 14)
   hint:SetText("Drag to move. Press Esc to close.")
 
+  local versionLabel = frame:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+  versionLabel:SetPoint("BOTTOMLEFT", FRAME_PADDING, 14)
+  versionLabel:SetTextColor(0.55, 0.55, 0.55)
+  if Tea_GetAddonVersion then
+    versionLabel:SetText("v" .. Tea_GetAddonVersion())
+  else
+    versionLabel:SetText("v?")
+  end
+
   sidebar = CreateFrame("Frame", nil, frame)
   sidebar:SetPoint("TOPLEFT", FRAME_PADDING, CONTENT_TOP)
   sidebar:SetPoint("BOTTOMLEFT", FRAME_PADDING, 36)

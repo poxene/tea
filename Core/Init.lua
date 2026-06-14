@@ -31,7 +31,11 @@ frame:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
     Tea_GetDB()
     BootstrapModules()
   elseif event == "PLAYER_LOGIN" then
-    Tea_Print("loaded. Type |cff66ccff/tea|r for options.")
+    if Tea_PrintVersionMessage then
+      Tea_PrintVersionMessage()
+    else
+      Tea_Print("loaded. Type |cff66ccff/tea|r for options.")
+    end
     BootstrapModules()
   elseif event == "PLAYER_ENTERING_WORLD" and (arg1 or arg2) then
     BootstrapModules()

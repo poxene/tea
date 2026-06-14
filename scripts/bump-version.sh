@@ -2,6 +2,7 @@
 set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+VERSION_FILE="${PROJECT_DIR}/scripts/tea-version.sh"
 TOC_FILE="${PROJECT_DIR}/tea.toc"
 PART="patch"
 
@@ -9,7 +10,7 @@ usage() {
   cat <<'EOF'
 Usage: scripts/bump-version.sh [--major | --minor | --patch]
 
-Bump ## Version in tea.toc (default: patch).
+Bump TEA_VERSION in scripts/tea-version.sh and sync ## Version in tea.toc (default: patch).
 EOF
 }
 
@@ -39,14 +40,22 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ ! -f "$VERSION_FILE" ]]; then
+  echo "Error: scripts/tea-version.sh not found at $VERSION_FILE" >&2
+  exit 1
+fi
+
 if [[ ! -f "$TOC_FILE" ]]; then
   echo "Error: tea.toc not found at $TOC_FILE" >&2
   exit 1
 fi
 
-CURRENT="$(grep '^## Version:' "$TOC_FILE" | awk '{print $3}')"
+# shellcheck source=tea-version.sh
+source "$VERSION_FILE"
+
+CURRENT="${TEA_VERSION:-}"
 if [[ -z "$CURRENT" ]]; then
-  echo "Error: could not read version from tea.toc" >&2
+  echo "Error: TEA_VERSION is not set in scripts/tea-version.sh" >&2
   exit 1
 fi
 
@@ -77,5 +86,6 @@ if [[ "$CURRENT" == "$NEXT" ]]; then
   exit 0
 fi
 
+sed -i "s/^TEA_VERSION=.*/TEA_VERSION=\"${NEXT}\"/" "$VERSION_FILE"
 sed -i "s/^## Version: .*/## Version: ${NEXT}/" "$TOC_FILE"
 echo "Version: ${CURRENT} -> ${NEXT}"

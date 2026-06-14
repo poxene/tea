@@ -37,6 +37,14 @@ SlashCmdList["TEA"] = function(msg)
     Tea_Print("  /tea minimap")
     Tea_Print("  /tea sell")
     Tea_Print("  /tea reload")
+    Tea_Print("  /tea version")
+    return
+  end
+
+  if msg == "version" or msg == "update" or msg == "updates" then
+    if Tea_PrintVersionMessage then
+      Tea_PrintVersionMessage()
+    end
     return
   end
 
