@@ -16,6 +16,7 @@ local powerText
 local resizeGrip
 local updateElapsed = 0
 local UPDATE_INTERVAL = 0.1
+local previewMode = false
 
 local PLAYER_UNIT_EVENTS = {
   "UNIT_HEALTH",
@@ -164,7 +165,11 @@ end
 
 local function ShowFrameTooltip()
   GameTooltip:SetOwner(frame, "ANCHOR_RIGHT")
-  GameTooltip:SetText("tea resource bars")
+  local title = "teaBars resource"
+  if previewMode then
+    title = title .. " (preview)"
+  end
+  GameTooltip:SetText(title)
   GameTooltip:AddLine("Drag to move.", 0.9, 0.9, 0.9)
   GameTooltip:AddLine("Use the corner grip to resize.", 0.9, 0.9, 0.9)
   GameTooltip:Show()
@@ -363,7 +368,7 @@ local function PlayerIsReady()
   return UnitGUID("player") ~= nil
 end
 
-local function TryShowResourceBars()
+local function TryShowResourceBars(applyOnly)
   if not IsEnabled() then
     if frame then
       frame:Hide()
@@ -379,7 +384,7 @@ local function TryShowResourceBars()
 
   GetOrCreateFrame()
 
-  if wasVisible then
+  if wasVisible and not applyOnly then
     SaveFrameSettings()
   end
 
@@ -403,7 +408,39 @@ local function OnPlayerResourceEvent()
 end
 
 function Tea_RefreshResourceBars()
-  TryShowResourceBars()
+  TryShowResourceBars(false)
+end
+
+function Tea_ApplyResourceBarsPosition()
+  TryShowResourceBars(true)
+end
+
+function Tea_SetResourceBarPreview(active)
+  local wantPreview = active and true or false
+  if previewMode == wantPreview then
+    if wantPreview then
+      Tea_ApplyResourceBarsPosition()
+    end
+    return
+  end
+
+  previewMode = wantPreview
+
+  if previewMode then
+    Tea_ApplyResourceBarsPosition()
+    return
+  end
+
+  TryShowResourceBars(false)
+end
+
+function Tea_CenterResourceBarsHorizontally()
+  local settings = GetSettings()
+  settings.point = "CENTER"
+  settings.relativePoint = "CENTER"
+  settings.x = 0
+
+  Tea_ApplyResourceBarsPosition()
 end
 
 local bootstrapFrame = CreateFrame("Frame")

@@ -17,11 +17,11 @@ Quality-of-life addon for **WoW Classic Era**.
 - **Options** — `/tea` opens a draggable settings window
 - **Minimap button** — click to open options; drag to move; right-click to hide
 - **Tooltip extras** — vendor price, item ID, item level, required level, equip slot, item type, max stack, tracked-item marker; optional Shift-only mode
-- **Sell junk** — **Sell Junk** button on the merchant window; `/tea sell`; optional auto-sell grey items on vendor open (off by default)
+- **Sell junk** — optional **Sell Junk** button on the merchant window; `/tea sell`; optional auto-sell grey items on vendor open (off by default)
 - **Repair warning** — warns at vendors when gear is below 35% durability, with repair cost
 - **Item tracking** — track items by ID; colored borders in bags; per-item colors
 - **teaBag** — combined bag window (inventory, ammo, soul shards, special items, equipped bags bar); replaces default bags; greys out junk icons; adjustable columns, slot size, and padding; opens at vendors when needed
-- **Resource bars** — floating health and power bars; drag to move; resize from corner; lock position and size
+- **teaBars** — floating health and power bars plus player and target cast bars; drag to move; resize from corner; lock position and size; hides the default player cast bar when the teaBars player cast bar is enabled
 
 ## Commands
 

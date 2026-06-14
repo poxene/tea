@@ -8,6 +8,7 @@ local defaults = {
     itemTrack = true,
     oneBag = true,
     resourceBars = false,
+    castBars = false,
   },
   tooltip = {
     showVendorPrice = true,
@@ -36,6 +37,9 @@ local defaults = {
     show = true,
     angle = 220,
   },
+  vendorTrash = {
+    showSellButton = true,
+  },
   resourceBars = {
     width = 200,
     height = 48,
@@ -44,6 +48,27 @@ local defaults = {
     x = -320,
     y = -180,
     locked = false,
+  },
+  castBars = {
+    showPlayer = true,
+    showTarget = true,
+    locked = false,
+    player = {
+      width = 240,
+      height = 24,
+      point = "CENTER",
+      relativePoint = "CENTER",
+      x = 0,
+      y = -120,
+    },
+    target = {
+      width = 240,
+      height = 24,
+      point = "CENTER",
+      relativePoint = "CENTER",
+      x = 0,
+      y = -90,
+    },
   },
 }
 
@@ -97,6 +122,15 @@ local function MigrateMinimapSettings(db)
   end
 end
 
+local function MigrateCastBarLock(db)
+  db.castBars = db.castBars or {}
+  if db.castBars.locked == nil then
+    local playerLocked = db.castBars.player and db.castBars.player.locked
+    local targetLocked = db.castBars.target and db.castBars.target.locked
+    db.castBars.locked = playerLocked == true or targetLocked == true
+  end
+end
+
 function Tea_GetDB()
   ApplyDefaults(TeaDB, defaults)
 
@@ -106,6 +140,7 @@ function Tea_GetDB()
 
   MigrateTrackedItems(TeaDB)
   MigrateMinimapSettings(TeaDB)
+  MigrateCastBarLock(TeaDB)
 
   return TeaDB
 end

@@ -9,6 +9,9 @@ local function BootstrapModules()
   if Tea_RefreshResourceBars then
     Tea_RefreshResourceBars()
   end
+  if Tea_RefreshCastBars then
+    Tea_RefreshCastBars()
+  end
 end
 
 frame:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)

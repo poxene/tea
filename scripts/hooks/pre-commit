@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(git rev-parse --show-toplevel)"
+TOC="${ROOT}/tea.toc"
+
+if [[ ! -f "$TOC" ]]; then
+  exit 0
+fi
+
+"${ROOT}/scripts/bump-version.sh"
+git add "$TOC"

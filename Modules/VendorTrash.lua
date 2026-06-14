@@ -136,11 +136,16 @@ local function UpdateSellButtonVisibility()
     return
   end
 
-  if MerchantFrame:IsShown() and MerchantFrame.selectedTab == 1 then
+  local showButton = Tea_GetDB().vendorTrash.showSellButton ~= false
+  if showButton and MerchantFrame:IsShown() and MerchantFrame.selectedTab == 1 then
     sellButton:Show()
   else
     sellButton:Hide()
   end
+end
+
+function Tea_RefreshSellButton()
+  UpdateSellButtonVisibility()
 end
 
 local function UpdateSellButtonLayout()

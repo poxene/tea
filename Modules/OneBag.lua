@@ -231,19 +231,86 @@ local function GetSlotIconAlpha(button, hoverAlpha)
   return hoverAlpha
 end
 
+local function GetSlotBagAndSlot(button)
+  if not button then
+    return
+  end
+
+  local parent = button:GetParent()
+  if not parent then
+    return
+  end
+
+  local bag = parent:GetID()
+  local slot = button:GetID()
+  if bag == nil or slot == nil or slot <= 0 then
+    return
+  end
+
+  return bag, slot
+end
+
+local function IsTeaBagSlot(button)
+  if not button or not button.GetName then
+    return false
+  end
+
+  local name = button:GetName()
+  return name and name:match("^TeaBagSlot") ~= nil
+end
+
+local slotInteractionHooksInstalled = false
+
+local function InstallSlotInteractionHooks()
+  if slotInteractionHooksInstalled then
+    return
+  end
+  slotInteractionHooksInstalled = true
+
+  if ContainerFrameItemButton_OnEnter then
+    hooksecurefunc("ContainerFrameItemButton_OnEnter", function(self)
+      if not IsTeaBagSlot(self) then
+        return
+      end
+
+      local bag = GetSlotBagAndSlot(self)
+      if bag then
+        SetHighlightedBag(bag, false)
+      end
+    end)
+  end
+
+  if ContainerFrameItemButton_OnLeave then
+    hooksecurefunc("ContainerFrameItemButton_OnLeave", function(self)
+      if not IsTeaBagSlot(self) then
+        return
+      end
+
+      ClearBagHighlight()
+    end)
+  end
+end
+
 local function UpdateSlotHighlight(button)
   EnsureSlotHighlight(button)
 
-  if highlightedBagID and highlightBagSlots and button.bagID == highlightedBagID then
-    button.TeaBagHighlight:Show()
-    if button.icon then
-      button.icon:SetAlpha(GetSlotIconAlpha(button, 1))
+  if highlightedBagID and highlightBagSlots then
+    local bag = GetSlotBagAndSlot(button)
+    if bag == highlightedBagID then
+      button.TeaBagHighlight:Show()
+      if button.icon then
+        button.icon:SetAlpha(GetSlotIconAlpha(button, 1))
+      end
+    else
+      button.TeaBagHighlight:Hide()
+      if button.icon then
+        button.icon:SetAlpha(GetSlotIconAlpha(button, HIGHLIGHT_DIM_ALPHA))
+      end
     end
   else
     button.TeaBagHighlight:Hide()
     if button.icon then
-      local hoverAlpha = highlightedBagID and highlightBagSlots and HIGHLIGHT_DIM_ALPHA or 1
-      button.icon:SetAlpha(GetSlotIconAlpha(button, hoverAlpha))
+      button.icon:SetAlpha(GetSlotIconAlpha(button, 1))
     end
   end
 end
@@ -450,7 +517,11 @@ local function ApplySlotQualityBorder(button, quality, hasItem)
 end
 
 local function UpdateSlot(button)
-  local bag, slot = button.bagID, button.slotID
+  local bag, slot = GetSlotBagAndSlot(button)
+  if not bag or not slot then
+    return
+  end
+
   local texture, count, locked, quality, _, _, hyperlink, _, _, itemID = Tea_Util.GetContainerItemInfo(bag, slot)
 
   if button.NewItemTexture then
@@ -538,47 +609,6 @@ function Tea_BagRefreshTracks()
   RefreshBag()
 end
 
-local function OnSlotClick(self, mouseButton)
-  if InCombatLockdown() then
-    return
-  end
-
-  if mouseButton == "RightButton" then
-    Tea_Util.UseContainerItem(self.bagID, self.slotID)
-  else
-    Tea_Util.PickupContainerItem(self.bagID, self.slotID)
-  end
-end
-
-local function ShowSlotTooltip(self)
-  if not self.bagID or not self.slotID then
-    return
-  end
-
-  if ContainerFrameItemButton_OnEnter and self:GetID() then
-    ContainerFrameItemButton_OnEnter(self)
-    return
-  end
-
-  GameTooltip:SetOwner(self, "ANCHOR_LEFT")
-  GameTooltip:SetBagItem(self.bagID, self.slotID)
-end
-
-local function OnSlotEnter(self)
-  SetHighlightedBag(self.bagID, false)
-  ShowSlotTooltip(self)
-end
-
-local function OnSlotLeave(self)
-  ClearBagHighlight()
-
-  if ContainerFrameItemButton_OnLeave then
-    ContainerFrameItemButton_OnLeave(self)
-  else
-    GameTooltip_Hide()
-  end
-end
-
 local function CreateSlotButton(index, bagID)
   local button = CreateFrame("Button", "TeaBagSlot" .. index, GetBagContainer(bagID), "ContainerFrameItemButtonTemplate")
 
@@ -591,18 +621,6 @@ local function CreateSlotButton(index, bagID)
   HideEmptySlotArt(button)
   SetupSlotHover(button)
   ApplySlotButtonSize(button, GetSlotSize())
-  button:RegisterForDrag("LeftButton")
-
-  function button:GetBagID()
-    return self.bagID
-  end
-
-  button:SetScript("OnClick", OnSlotClick)
-  button:SetScript("OnDragStart", OnSlotClick)
-  button:SetScript("OnReceiveDrag", OnSlotClick)
-  button:SetScript("OnEnter", OnSlotEnter)
-  button:SetScript("OnLeave", OnSlotLeave)
-  button.UpdateTooltip = ShowSlotTooltip
   return button
 end
 
@@ -728,8 +746,6 @@ local function LayoutSectionSlots(section, startY, buttonIndex, columns, slotSiz
       button:SetParent(GetBagContainer(slotInfo.bag))
     end
 
-    button.bagID = slotInfo.bag
-    button.slotID = slotInfo.slot
     button:SetID(slotInfo.slot)
     button:Show()
 
@@ -814,6 +830,8 @@ local function LayoutSlots()
 end
 
 local function BuildFrame()
+  InstallSlotInteractionHooks()
+
   local backdropTemplate = BackdropTemplateMixin and "BackdropTemplate" or nil
   frame = CreateFrame("Frame", "TeaBagFrame", UIParent, backdropTemplate)
   frame:SetPoint("RIGHT", UIParent, "RIGHT", -40, 0)

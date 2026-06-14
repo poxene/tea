@@ -13,8 +13,17 @@ end
 
 local function GetTooltipStackCount(tooltip)
   local owner = tooltip:GetOwner()
-  if owner and owner.GetBagID then
-    local bag = owner:GetBagID()
+  if owner then
+    local bag
+    if owner.GetBagID then
+      bag = owner:GetBagID()
+    elseif owner.GetParent then
+      local parent = owner:GetParent()
+      if parent and parent.GetID then
+        bag = parent:GetID()
+      end
+    end
+
     local slot = owner.GetID and owner:GetID()
     if bag and slot then
       local _, count = Tea_Util.GetContainerItemInfo(bag, slot)

@@ -98,13 +98,20 @@ TAG="v${VERSION}"
 mkdir -p "$DIST_DIR"
 rm -f "$OUTPUT_PATH"
 
+STAGE_DIR="$(mktemp -d)"
+trap 'rm -rf "$STAGE_DIR"' EXIT
+STAGE_ADDON="${STAGE_DIR}/${ADDON_NAME}"
+
+mkdir -p "$STAGE_ADDON"
+cp "$TOC_FILE" "$STAGE_ADDON/"
+cp -r "${PROJECT_DIR}/Core" "${PROJECT_DIR}/Modules" "$STAGE_ADDON/"
+if [[ -f "${PROJECT_DIR}/README.md" ]]; then
+  cp "${PROJECT_DIR}/README.md" "$STAGE_ADDON/"
+fi
+
 (
-  cd "$(dirname "$PROJECT_DIR")"
-  zip -r "$OUTPUT_PATH" "$ADDON_NAME" \
-    -x "$ADDON_NAME/.git/*" \
-    -x "$ADDON_NAME/.vscode/*" \
-    -x "$ADDON_NAME/scripts/*" \
-    -x "$ADDON_NAME/dist/*"
+  cd "$STAGE_DIR"
+  zip -r "$OUTPUT_PATH" "$ADDON_NAME"
 )
 
 echo "Created $OUTPUT_PATH"
