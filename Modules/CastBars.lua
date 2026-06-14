@@ -36,53 +36,121 @@ local DEMO_PLAYER_TEXTURE = "Interface\\Icons\\Spell_Fire_Fireball02"
 local DEMO_TARGET_SPELL = "Shadow Bolt"
 local DEMO_TARGET_TEXTURE = "Interface\\Icons\\Spell_Shadow_ShadowBolt02"
 
-local function GetBlizzardCastBar()
-  if PlayerCastingBarFrame then
-    return PlayerCastingBarFrame
-  end
-  return CastingBarFrame
-end
-
-local function ShouldSuppressBlizzardCastBar()
-  if previewMode and IsEnabled() and GetSettings().showPlayer ~= false then
-    return true
-  end
-  return IsEnabled() and GetSettings().showPlayer ~= false
-end
-
-local function RestoreBlizzardCastBar(frame)
-  if type(CastingBarFrame_OnLoad) == "function" then
-    CastingBarFrame_OnLoad(frame)
-  end
-  if frame.SetUnit then
-    frame:SetUnit("player", false, false)
-  elseif type(CastingBarFrame_SetUnit) == "function" then
-    CastingBarFrame_SetUnit(frame, "player")
-  end
-  blizzardCastBarSuppressed = false
-end
-
-local function UpdateBlizzardCastBar()
-  local frame = GetBlizzardCastBar()
-  if not frame then
-    return
-  end
-
-  if ShouldSuppressBlizzardCastBar() then
-    frame:UnregisterAllEvents()
-    frame:Hide()
-    blizzardCastBarSuppressed = true
-  elseif blizzardCastBarSuppressed then
-    RestoreBlizzardCastBar(frame)
-  end
-end
-
 local function IsEnabled()
   return Tea_GetDB().modules.castBars
 end
 
 local function GetSettings()
   return Tea_GetDB().castBars
+end
+
+local function ShouldSuppressBlizzardCastBar()
+  if not IsEnabled() or GetSettings().showPlayer == false then
+    return false
+  end
+  return true
+end
+
+local function GetBlizzardCastBarFrames()
+  local frames = {}
+  if CastingBarFrame then
+    table.insert(frames, CastingBarFrame)
+  end
+  if PlayerCastingBarFrame and PlayerCastingBarFrame ~= CastingBarFrame then
+    table.insert(frames, PlayerCastingBarFrame)
+  end
+  return frames
+end
+
+local function HookBlizzardCastBarSuppression(frame)
+  if not frame or frame.teaSuppressionHooked then
+    return
+  end
+
+  frame.teaSuppressionHooked = true
+
+  hooksecurefunc(frame, "Show", function(self)
+    if ShouldSuppressBlizzardCastBar() then
+      self:Hide()
+    end
+  end)
+
+  if frame.RegisterUnitEvent then
+    hooksecurefunc(frame, "RegisterUnitEvent", function(self)
+      if ShouldSuppressBlizzardCastBar() then
+        self:UnregisterAllEvents()
+        self:Hide()
+      end
+    end)
+  end
+
+  hooksecurefunc(frame, "RegisterEvent", function(self)
+    if ShouldSuppressBlizzardCastBar() then
+      self:UnregisterAllEvents()
+      self:Hide()
+    end
+  end)
+end
+
+local function SuppressBlizzardCastBarFrame(frame)
+  if not frame then
+    return
+  end
+
+  HookBlizzardCastBarSuppression(frame)
+  frame:UnregisterAllEvents()
+  frame:Hide()
+end
+
+local function RestoreBlizzardCastBar(frame)
+  if not frame then
+    return
+  end
+
+  if Tea_Util and Tea_Util.SafeCall then
+    Tea_Util.SafeCall(function()
+      if type(CastingBarFrame_OnLoad) == "function" then
+        CastingBarFrame_OnLoad(frame)
+      end
+      if frame.SetUnit then
+        frame:SetUnit("player", false, false)
+      elseif type(CastingBarFrame_SetUnit) == "function" then
+        CastingBarFrame_SetUnit(frame, "player")
+      end
+    end)
+  end
+end
+
+local function UpdateBlizzardCastBar()
+  local shouldSuppress = ShouldSuppressBlizzardCastBar()
+  local frames = GetBlizzardCastBarFrames()
+
+  if #frames == 0 then
+    return
+  end
+
+  if shouldSuppress then
+    for _, frame in ipairs(frames) do
+      SuppressBlizzardCastBarFrame(frame)
+    end
+    blizzardCastBarSuppressed = true
+    return
+  end
+
+  if blizzardCastBarSuppressed then
+    for _, frame in ipairs(frames) do
+      RestoreBlizzardCastBar(frame)
+    end
+    blizzardCastBarSuppressed = false
+  end
+end
+
+local function ScheduleBlizzardCastBarUpdate()
+  UpdateBlizzardCastBar()
+  if Tea_Util and Tea_Util.After then
+    Tea_Util.After(0, UpdateBlizzardCastBar)
+    Tea_Util.After(0.5, UpdateBlizzardCastBar)
+  end
 end
 
 local function Clamp(value, minValue, maxValue)
@@ -276,7 +344,7 @@ local function UpdatePreviewCastBar(bar)
 end
 
 local function UpdateCastBar(bar)
-  if not bar or not bar.frame then
+  if not bar or not bar.frame or not bar.statusBar or not bar.text then
     return
   end
 
@@ -449,8 +517,20 @@ local function EnsureBars()
 end
 
 local function UpdateAllCastBars()
-  UpdateCastBar(playerBar)
-  UpdateCastBar(targetBar)
+  if playerBar then
+    UpdateCastBar(playerBar)
+  end
+  if targetBar then
+    UpdateCastBar(targetBar)
+  end
+end
+
+local function SafeUpdateAllCastBars()
+  if Tea_Util and Tea_Util.SafeCall then
+    Tea_Util.SafeCall(UpdateAllCastBars)
+  else
+    UpdateAllCastBars()
+  end
 end
 
 local function PlayerIsReady()
@@ -476,10 +556,10 @@ local function TryShowCastBars(applyOnly)
   EnsureBars()
 
   if not applyOnly then
-    if playerBar.frame:IsShown() then
+    if playerBar and playerBar.frame and playerBar.frame:IsShown() then
       SaveBarSettings(playerBar)
     end
-    if targetBar.frame:IsShown() then
+    if targetBar and targetBar.frame and targetBar.frame:IsShown() then
       SaveBarSettings(targetBar)
     end
   end
@@ -489,7 +569,7 @@ local function TryShowCastBars(applyOnly)
   ApplyBarLockState(playerBar)
   ApplyBarLockState(targetBar)
   UpdateAllCastBars()
-  UpdateBlizzardCastBar()
+  ScheduleBlizzardCastBarUpdate()
   return true
 end
 
@@ -513,7 +593,7 @@ function Tea_ApplyCastBarsPosition()
     ApplyBarLockState(playerBar)
     ApplyBarLockState(targetBar)
     UpdateAllCastBars()
-    UpdateBlizzardCastBar()
+    ScheduleBlizzardCastBarUpdate()
     return
   end
 
@@ -580,7 +660,13 @@ bootstrapFrame:SetScript("OnUpdate", function(self)
   end
 
   bootstrapTicks = bootstrapTicks - 1
-  if TryShowCastBars() then
+  local done = false
+  if Tea_Util and Tea_Util.SafeCall then
+    done = Tea_Util.SafeCall(TryShowCastBars)
+  else
+    done = TryShowCastBars()
+  end
+  if done then
     bootstrapTicks = 0
     self:Hide()
   end
@@ -601,7 +687,7 @@ tickFrame:SetScript("OnUpdate", function(_, elapsed)
   updateElapsed = updateElapsed + elapsed
   if updateElapsed >= UPDATE_INTERVAL then
     updateElapsed = 0
-    UpdateAllCastBars()
+    SafeUpdateAllCastBars()
   end
 end)
 
@@ -623,6 +709,7 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
 
   if event == "PLAYER_LOGIN" then
     StartBootstrap()
+    ScheduleBlizzardCastBarUpdate()
     return
   end
 
@@ -630,7 +717,7 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2, arg3)
     if arg1 or arg2 then
       StartBootstrap()
     end
-    UpdateBlizzardCastBar()
+    ScheduleBlizzardCastBarUpdate()
     return
   end
 

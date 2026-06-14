@@ -1,7 +1,7 @@
 ## Interface: 11508
 ## Title: tea
 ## Notes: Quality-of-life addon for WoW Classic Era.
-## Version: 0.5.2
+## Version: 0.5.3
 ## Author: tea
 ## SavedVariables: TeaDB
 

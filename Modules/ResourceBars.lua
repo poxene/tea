@@ -189,7 +189,9 @@ local function ApplyLockState()
   local locked = IsLocked()
 
   frame:SetMovable(not locked)
-  frame:SetResizable(not locked)
+  if frame.SetResizable then
+    frame:SetResizable(not locked)
+  end
 
   if locked then
     frame:RegisterForDrag()
@@ -210,7 +212,9 @@ local function ApplyLockState()
     resizeGrip:SetScript("OnEnter", ShowGripTooltip)
     resizeGrip:SetScript("OnLeave", GameTooltip_Hide)
     resizeGrip:SetScript("OnMouseDown", function()
-      frame:StartSizing("BOTTOMRIGHT")
+      if frame.StartSizing then
+        frame:StartSizing("BOTTOMRIGHT")
+      end
     end)
     resizeGrip:SetScript("OnMouseUp", function()
       frame:StopMovingOrSizing()
@@ -222,7 +226,7 @@ local function ApplyLockState()
 end
 
 local function UpdateBars()
-  if not frame or not frame:IsShown() then
+  if not frame or not frame:IsShown() or not healthBar or not healthText then
     return
   end
 
@@ -232,7 +236,7 @@ local function UpdateBars()
   healthBar:SetValue(health)
   healthText:SetText(string.format("%s / %s", FormatResourceValue(health), FormatResourceValue(maxHealth)))
 
-  if PlayerUsesPowerBar() then
+  if PlayerUsesPowerBar() and powerBar and powerText then
     local powerType = GetPowerType()
     local power = UnitPower("player", powerType) or 0
     local maxPower = UnitPowerMax("player", powerType) or 0
@@ -357,7 +361,11 @@ local function GetOrCreateFrame()
     updateElapsed = updateElapsed + elapsed
     if updateElapsed >= UPDATE_INTERVAL then
       updateElapsed = 0
-      UpdateBars()
+      if Tea_Util and Tea_Util.SafeCall then
+        Tea_Util.SafeCall(UpdateBars)
+      else
+        UpdateBars()
+      end
     end
   end)
 
@@ -460,7 +468,13 @@ bootstrapFrame:SetScript("OnUpdate", function(self)
   end
 
   bootstrapTicks = bootstrapTicks - 1
-  if TryShowResourceBars() then
+  local done = false
+  if Tea_Util and Tea_Util.SafeCall then
+    done = Tea_Util.SafeCall(TryShowResourceBars)
+  else
+    done = TryShowResourceBars()
+  end
+  if done then
     bootstrapTicks = 0
     self:Hide()
   end

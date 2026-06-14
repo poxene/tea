@@ -5,8 +5,13 @@ local pendingAutoSell = false
 local moneyBeforeSell
 
 local function ForEachGreyItem(callback)
+  if not Tea_Util or not Tea_Util.GetContainerNumSlots then
+    return
+  end
+
   for bag = BACKPACK_CONTAINER, NUM_BAG_FRAMES do
-    for slot = 1, Tea_Util.GetContainerNumSlots(bag) do
+    local numSlots = Tea_Util.GetContainerNumSlots(bag) or 0
+    for slot = 1, numSlots do
       local itemID = Tea_Util.GetContainerItemID(bag, slot)
       if itemID and Tea_Util.IsGreyItem(itemID) then
         local _, stackCount, locked, _, _, _, _, _, hasNoValue = Tea_Util.GetContainerItemInfo(bag, slot)
@@ -50,7 +55,8 @@ function Tea_SellGreyItems()
   local sold = 0
 
   for bag = BACKPACK_CONTAINER, NUM_BAG_FRAMES do
-    for slot = 1, Tea_Util.GetContainerNumSlots(bag) do
+    local numSlots = Tea_Util.GetContainerNumSlots(bag) or 0
+    for slot = 1, numSlots do
       if sold >= MAX_SELL_PER_PASS then
         break
       end
@@ -137,7 +143,7 @@ local function UpdateSellButtonVisibility()
   end
 
   local showButton = Tea_GetDB().vendorTrash.showSellButton ~= false
-  if showButton and MerchantFrame:IsShown() and MerchantFrame.selectedTab == 1 then
+  if showButton and MerchantFrame and MerchantFrame:IsShown() and MerchantFrame.selectedTab == 1 then
     sellButton:Show()
   else
     sellButton:Hide()
@@ -221,10 +227,10 @@ frame:SetScript("OnEvent", function(_, event, arg1)
 
   if event == "MERCHANT_SHOW" then
     UpdateSellButtonLayout()
-    C_Timer.After(0.05, ProcessAutoSell)
+    Tea_Util.After(0.05, ProcessAutoSell)
   elseif event == "MERCHANT_CLOSED" then
     FinishSellMessage()
   elseif event == "PLAYER_MONEY" and pendingAutoSell then
-    C_Timer.After(0.05, ContinueSellingIfNeeded)
+    Tea_Util.After(0.05, ContinueSellingIfNeeded)
   end
 end)

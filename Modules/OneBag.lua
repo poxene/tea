@@ -576,7 +576,7 @@ end
 
 local function RefreshEquippedBags()
   for _, button in ipairs(equippedBagButtons) do
-    if button:IsShown() and button.bagID then
+    if button:IsShown() and button.bagID and button.icon then
       button.icon:SetTexture(GetBagIconTexture(button.bagID))
     end
   end
@@ -842,7 +842,12 @@ local function BuildFrame()
   frame:RegisterForDrag("LeftButton")
   frame:SetScript("OnDragStart", frame.StartMoving)
   frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
+  frame:SetScript("OnHide", function()
+    SetHighlightedBag(nil)
+  end)
   frame:Hide()
+
+  tinsert(UISpecialFrames, frame:GetName())
 
   if frame.SetBackdrop then
     frame:SetBackdrop({
@@ -1061,7 +1066,6 @@ end
 
 function Tea_CloseBag()
   if frame then
-    SetHighlightedBag(nil)
     frame:Hide()
   end
 end
@@ -1106,7 +1110,7 @@ eventFrame:SetScript("OnEvent", function(_, event)
     merchantBagsActive = true
     if IsEnabled() then
       OpenBagsForMerchant(MerchantFrame)
-      C_Timer.After(0, function()
+      Tea_Util.After(0, function()
         if merchantBagsActive and IsEnabled() then
           OpenBagsForMerchant(MerchantFrame)
         end
@@ -1139,7 +1143,7 @@ end)
 
 local function ScheduleBagSuppressionSetup()
   SetupBlizzardBagSuppression()
-  C_Timer.After(0, SetupBlizzardBagSuppression)
+  Tea_Util.After(0, SetupBlizzardBagSuppression)
 end
 
 if UnitName("player") then

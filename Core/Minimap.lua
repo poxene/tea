@@ -49,7 +49,7 @@ local function GetMinimapSettings()
 end
 
 local function PositionButton()
-  if not button then
+  if not button or not Minimap then
     return
   end
 
@@ -80,7 +80,7 @@ local function NotifyMinimapVisibilityChanged()
 end
 
 local function UpdateDrag(self)
-  if not self.isMouseDown then
+  if not self.isMouseDown or not Minimap then
     return
   end
 

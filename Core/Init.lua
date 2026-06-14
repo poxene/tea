@@ -6,6 +6,18 @@ frame:RegisterEvent("PLAYER_LOGIN")
 frame:RegisterEvent("PLAYER_ENTERING_WORLD")
 
 local function BootstrapModules()
+  if Tea_Util and Tea_Util.SafeCall then
+    Tea_Util.SafeCall(function()
+      if Tea_RefreshResourceBars then
+        Tea_RefreshResourceBars()
+      end
+      if Tea_RefreshCastBars then
+        Tea_RefreshCastBars()
+      end
+    end)
+    return
+  end
+
   if Tea_RefreshResourceBars then
     Tea_RefreshResourceBars()
   end

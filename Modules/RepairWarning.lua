@@ -51,6 +51,6 @@ frame:SetScript("OnEvent", function(_, event, arg1)
   end
 
   if event == "MERCHANT_SHOW" then
-    C_Timer.After(0.1, MaybeWarnRepair)
+    Tea_Util.After(0.1, MaybeWarnRepair)
   end
 end)

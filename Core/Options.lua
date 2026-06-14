@@ -207,6 +207,12 @@ local function SetOptionValue(path, checked)
   local node = db
   for i = 1, #path - 1 do
     node = node[path[i]]
+    if not node then
+      return
+    end
+  end
+  if not node then
+    return
   end
   node[path[#path]] = checked
 end
@@ -447,7 +453,11 @@ local function OpenTrackColorPicker(itemID, swatch)
   end
   ColorPickerFrame.cancelFunc = function()
     local prev = ColorPickerFrame.previousValues
-    ApplyColor(prev.r, prev.g, prev.b)
+    if prev then
+      ApplyColor(prev.r, prev.g, prev.b)
+    else
+      ApplyColor(r, g, b)
+    end
   end
   ColorPickerFrame:Show()
 end
@@ -1066,7 +1076,9 @@ local function CreateNavButton(parent, section, index)
 
   button:SetScript("OnClick", function()
     SelectSection(index)
-    PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB)
+    if SOUNDKIT and SOUNDKIT.IG_CHARACTER_INFO_TAB and PlaySound then
+      PlaySound(SOUNDKIT.IG_CHARACTER_INFO_TAB)
+    end
   end)
 
   SetNavButtonSelected(button, index == activeSection)

@@ -59,9 +59,13 @@ frame:RegisterEvent("PLAYER_LOGIN")
 
 frame:SetScript("OnEvent", function(_, event)
   if event == "BAG_UPDATE_DELAYED" then
-    Tea_RefreshTrackHighlights()
+    if Tea_Util and Tea_Util.SafeCall then
+      Tea_Util.SafeCall(Tea_RefreshTrackHighlights)
+    else
+      Tea_RefreshTrackHighlights()
+    end
   elseif event == "PLAYER_LOGIN" then
-    C_Timer.After(0.5, Tea_RefreshTrackHighlights)
+    Tea_Util.After(0.5, Tea_RefreshTrackHighlights)
   end
 end)
 

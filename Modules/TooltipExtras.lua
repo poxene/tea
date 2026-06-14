@@ -13,23 +13,25 @@ end
 
 local function GetTooltipStackCount(tooltip)
   local owner = tooltip:GetOwner()
-  if owner then
-    local bag
-    if owner.GetBagID then
-      bag = owner:GetBagID()
-    elseif owner.GetParent then
-      local parent = owner:GetParent()
-      if parent and parent.GetID then
-        bag = parent:GetID()
-      end
-    end
+  if not owner then
+    return 1
+  end
 
-    local slot = owner.GetID and owner:GetID()
-    if bag and slot then
-      local _, count = Tea_Util.GetContainerItemInfo(bag, slot)
-      if count and count > 0 then
-        return count
-      end
+  local bag
+  if owner.GetBagID then
+    bag = owner:GetBagID()
+  elseif owner.GetParent then
+    local parent = owner:GetParent()
+    if parent and parent.GetID then
+      bag = parent:GetID()
+    end
+  end
+
+  local slot = owner.GetID and owner:GetID()
+  if bag and slot and Tea_Util and Tea_Util.GetContainerItemInfo then
+    local _, count = Tea_Util.GetContainerItemInfo(bag, slot)
+    if count and count > 0 then
+      return count
     end
   end
   return 1
@@ -43,7 +45,11 @@ local function GetEquipSlotLabel(equipLoc)
 end
 
 local function AddTooltipLines(tooltip)
-  if not ShouldShow() then
+  if not ShouldShow() or not tooltip or not tooltip.GetItem then
+    return
+  end
+
+  if not Tea_Util or not Tea_Util.GetItemInfo then
     return
   end
 
@@ -53,7 +59,7 @@ local function AddTooltipLines(tooltip)
   end
 
   local db = Tea_GetDB()
-  local itemID = Tea_Util.GetItemInfoInstant(link)
+  local itemID = Tea_Util.GetItemInfoInstant and Tea_Util.GetItemInfoInstant(link)
   local _, _, _, itemLevel, requiredLevel, itemType, itemSubType, maxStack, equipLoc, _, sellPrice =
     Tea_Util.GetItemInfo(link)
   local count = GetTooltipStackCount(tooltip)
@@ -106,12 +112,20 @@ local function AddTooltipLines(tooltip)
   end
 end
 
+local function SafeAddTooltipLines(tooltip)
+  if Tea_Util and Tea_Util.SafeCall then
+    Tea_Util.SafeCall(AddTooltipLines, tooltip)
+  else
+    AddTooltipLines(tooltip)
+  end
+end
+
 local function HookTooltip(tooltip)
   if not tooltip or tooltip.teaHooked then
     return
   end
   tooltip.teaHooked = true
-  tooltip:HookScript("OnTooltipSetItem", AddTooltipLines)
+  tooltip:HookScript("OnTooltipSetItem", SafeAddTooltipLines)
 end
 
 local frame = CreateFrame("Frame")
