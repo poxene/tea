@@ -70,6 +70,7 @@ local SECTIONS = {
   },
   { id = "tracking", label = "Tracking" },
   { id = "oneBag", label = "Bags" },
+  { id = "teaBank", label = "Bank" },
   {
     id = "teaBars",
     label = "Bars",
@@ -86,6 +87,7 @@ local checkboxes = {}
 local trackListFrame
 local trackEditBox
 local oneBagSliders = {}
+local bankSliders = {}
 local barSliders = {}
 local RefreshTrackList
 
@@ -878,8 +880,9 @@ local function BuildTeaBarsPanel(content)
   return castTargetY
 end
 
-local function CreateSlider(content, label, path, minValue, maxValue, step, anchor, yOffset, onChange)
-  local slider = CreateFrame("Slider", "TeaOptionsSlider" .. #oneBagSliders + 1, content, "OptionsSliderTemplate")
+local function CreateSlider(content, label, path, minValue, maxValue, step, anchor, yOffset, onChange, sliderRegistry)
+  sliderRegistry = sliderRegistry or oneBagSliders
+  local slider = CreateFrame("Slider", "TeaOptionsSlider" .. (#oneBagSliders + #bankSliders + 1), content, "OptionsSliderTemplate")
   slider:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, yOffset)
   slider:SetPoint("RIGHT", content, "RIGHT", -24, 0)
   slider:SetMinMaxValues(minValue, maxValue)
@@ -911,15 +914,23 @@ local function CreateSlider(content, label, path, minValue, maxValue, step, anch
     end
   end)
 
-  table.insert(oneBagSliders, { slider = slider, path = path })
+  table.insert(sliderRegistry, { slider = slider, path = path })
   return slider
 end
 
-local function RefreshOneBagSliders()
-  for _, entry in ipairs(oneBagSliders) do
+local function RefreshSliderGroup(sliders)
+  for _, entry in ipairs(sliders) do
     local minValue = select(1, entry.slider:GetMinMaxValues())
     entry.slider:SetValue(GetNumericOptionValue(entry.path) or minValue)
   end
+end
+
+local function RefreshOneBagSliders()
+  RefreshSliderGroup(oneBagSliders)
+end
+
+local function RefreshBankSliders()
+  RefreshSliderGroup(bankSliders)
 end
 
 local function RefreshBagAppearance()
@@ -991,6 +1002,39 @@ local function BuildOneBagPanel(content)
   )
 
   return paddingSlider
+end
+
+local function RefreshBankAppearance()
+  if Tea_BankRelayout then
+    Tea_BankRelayout()
+  end
+end
+
+local function BuildTeaBankPanel(content)
+  local header = CreatePanelHeader(content, "Bank")
+
+  local enable = CreateCheckbox(content, "Enable", { "modules", "teaBank" }, header, -8, {
+    onChange = RefreshBankAppearance,
+  })
+
+  local columnsHint = content:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+  columnsHint:SetPoint("TOPLEFT", enable, "BOTTOMLEFT", 0, -14)
+  columnsHint:SetText("Items per row")
+
+  local columnsSlider = CreateSlider(
+    content,
+    "Columns",
+    { "teaBank", "columns" },
+    4,
+    12,
+    1,
+    columnsHint,
+    -8,
+    RefreshBankAppearance,
+    bankSliders
+  )
+
+  return columnsSlider
 end
 
 local function SetNavButtonSelected(button, selected)
@@ -1106,6 +1150,8 @@ local function BuildSectionPanel(section, index)
     bottom = BuildTrackingPanel(content)
   elseif section.id == "oneBag" then
     bottom = BuildOneBagPanel(content)
+  elseif section.id == "teaBank" then
+    bottom = BuildTeaBankPanel(content)
   elseif section.id == "teaBars" then
     bottom = BuildTeaBarsPanel(content)
   else
@@ -1120,6 +1166,7 @@ end
 local function RefreshPanel()
   RefreshCheckboxes()
   RefreshOneBagSliders()
+  RefreshBankSliders()
   RefreshBarSliders()
   RefreshActivePanel()
   UpdateBarsPanelPreview()

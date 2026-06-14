@@ -7,6 +7,7 @@ local defaults = {
     repairWarning = true,
     itemTrack = true,
     oneBag = true,
+    teaBank = true,
     resourceBars = false,
     castBars = false,
   },
@@ -32,6 +33,9 @@ local defaults = {
     slotSize = 37,
     slotPadding = 2,
     greyJunkIcons = true,
+  },
+  teaBank = {
+    columns = 8,
   },
   minimap = {
     show = true,

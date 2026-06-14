@@ -1190,16 +1190,15 @@ function Tea_BagRelayout()
     if frame and frame:IsShown() then
       frame:Hide()
     end
-    if Tea_RestoreBlizzardBank then
+    if Tea_RestoreBlizzardBank and (not Tea_BankIsEnabled or not Tea_BankIsEnabled()) then
       Tea_RestoreBlizzardBank()
     end
-    return
-  end
-
-  if frame then
-    LayoutSlots()
-    if frame:IsShown() then
-      RefreshBag()
+  else
+    if frame then
+      LayoutSlots()
+      if frame:IsShown() then
+        RefreshBag()
+      end
     end
   end
 

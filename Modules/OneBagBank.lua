@@ -27,6 +27,8 @@ local CLOSE_BUTTON_SIZE = 16
 local HIGHLIGHT_BAG_R, HIGHLIGHT_BAG_G, HIGHLIGHT_BAG_B = 0.58, 0.78, 0.98
 local HIGHLIGHT_BAG_ALPHA = 0.58
 local HIGHLIGHT_DIM_ALPHA = 0.6
+local UNPURCHASED_OVERLAY_R, UNPURCHASED_OVERLAY_G, UNPURCHASED_OVERLAY_B = 1.0, 0.12, 0.12
+local UNPURCHASED_OVERLAY_ALPHA = 0.22
 
 local BLIZZARD_BANK_UI_FRAMES = {
   "BankFrame",
@@ -60,11 +62,15 @@ local bankLayoutScheduled = false
 local clearBankHighlightToken = 0
 
 local function IsEnabled()
-  return S.IsEnabled()
+  return Tea_GetDB().modules.teaBank
+end
+
+local function GetBankSettings()
+  return Tea_GetDB().teaBank
 end
 
 local function GetColumns()
-  return S.GetColumns()
+  return GetBankSettings().columns or 8
 end
 
 local function GetSlotSize()
@@ -76,11 +82,14 @@ local function GetSlotPadding()
 end
 
 local function GetGridWidth()
-  return S.GetGridWidth()
+  local columns = GetColumns()
+  local slotSize = GetSlotSize()
+  local slotPadding = GetSlotPadding()
+  return columns * (slotSize + slotPadding) + slotPadding
 end
 
 local function GetSettingsKey()
-  return S.GetSettingsKey()
+  return string.format("%d:%d:%d", GetColumns(), GetSlotSize(), GetSlotPadding())
 end
 
 local function UpdateSlot(button)
@@ -654,11 +663,17 @@ local function ApplyBankBagBarButton(button, bagIndex)
 
   if isPurchased then
     ApplyBankBagIcon(button, bagID)
+    if button.purchaseOverlay then
+      button.purchaseOverlay:Hide()
+    end
   elseif button.icon then
     local texture = GetBlizzardBankBagButtonTexture(bagIndex) or EMPTY_BANK_BAG_TEXTURE
     button.icon:SetTexture(texture)
-    button.icon:SetVertexColor(1.0, 0.1, 0.1)
+    button.icon:SetVertexColor(1, 1, 1)
     button.icon:Show()
+    if button.purchaseOverlay then
+      button.purchaseOverlay:Show()
+    end
   end
 end
 
@@ -827,7 +842,19 @@ local function CreateBankBagButton(index)
   icon:SetAllPoints()
   button.icon = icon
 
-  local border = button:CreateTexture(nil, "OVERLAY")
+  local purchaseOverlay = button:CreateTexture(nil, "OVERLAY")
+  purchaseOverlay:SetAllPoints(icon)
+  purchaseOverlay:SetTexture("Interface\\Buttons\\WHITE8x8")
+  purchaseOverlay:SetVertexColor(
+    UNPURCHASED_OVERLAY_R,
+    UNPURCHASED_OVERLAY_G,
+    UNPURCHASED_OVERLAY_B,
+    UNPURCHASED_OVERLAY_ALPHA
+  )
+  purchaseOverlay:Hide()
+  button.purchaseOverlay = purchaseOverlay
+
+  local border = button:CreateTexture(nil, "OVERLAY", nil, 1)
   border:SetPoint("TOPLEFT", icon, "TOPLEFT", -1, 1)
   border:SetPoint("BOTTOMRIGHT", icon, "BOTTOMRIGHT", 1, -1)
   border:SetTexture("Interface\\Buttons\\WHITE8x8")
@@ -1203,6 +1230,10 @@ end
 
 function Tea_BankIsOpen()
   return IsBankOpen()
+end
+
+function Tea_BankIsEnabled()
+  return IsEnabled()
 end
 
 function Tea_CloseBank()
