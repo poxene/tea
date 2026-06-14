@@ -1,5 +1,7 @@
 local ADDON_NAME = ...
 
+local THISTLE_TEA_ITEM_ID = 7676
+local THISTLE_TEA_ICON = "Interface\\Icons\\INV_Drink_Milk_05"
 local BUTTON_SIZE = 31
 local ICON_SIZE = 20
 local ICON_OFFSET_X = 7
@@ -10,6 +12,37 @@ local MINIMAP_RADIUS = 80
 local DRAG_THRESHOLD = 4
 
 local button
+
+local function GetThistleTeaIcon()
+  if Tea_Util and Tea_Util.GetItemInfoInstant then
+    local _, _, _, _, icon = Tea_Util.GetItemInfoInstant(THISTLE_TEA_ITEM_ID)
+    if icon then
+      return icon
+    end
+  end
+
+  if C_Item and C_Item.GetItemIconByID then
+    local icon = C_Item.GetItemIconByID(THISTLE_TEA_ITEM_ID)
+    if icon then
+      return icon
+    end
+  end
+
+  local _, _, _, _, _, _, _, _, _, texture = GetItemInfo(THISTLE_TEA_ITEM_ID)
+  if texture then
+    return texture
+  end
+
+  return THISTLE_TEA_ICON
+end
+
+local function ApplyMinimapIcon()
+  if not button or not button.icon then
+    return
+  end
+
+  button.icon:SetTexture(GetThistleTeaIcon())
+end
 
 local function GetMinimapSettings()
   return Tea_GetDB().minimap
@@ -93,7 +126,7 @@ local function CreateMinimapButton()
   local icon = button:CreateTexture(nil, "ARTWORK")
   icon:SetSize(ICON_SIZE, ICON_SIZE)
   icon:SetPoint("TOPLEFT", button, "TOPLEFT", ICON_OFFSET_X, ICON_OFFSET_Y)
-  icon:SetTexture("Interface\\Icons\\INV_Drink_05")
+  icon:SetTexture(GetThistleTeaIcon())
   button.icon = icon
 
   button:SetScript("OnEnter", function(self)
@@ -176,5 +209,6 @@ loader:SetScript("OnEvent", function(_, event, arg1)
     Tea_GetDB()
   elseif event == "PLAYER_LOGIN" then
     Tea_InitMinimap()
+    ApplyMinimapIcon()
   end
 end)
