@@ -12,6 +12,13 @@ local BOTTOM_PADDING = 8
 local MONEY_RIGHT_OFFSET = 6
 local INVENTORY_BAR_GAP = 4
 local BAGS_HEADER_TITLE = "Bags"
+local BANK_CONTAINER_ID = BANK_CONTAINER or -1
+local NUM_BANK_GENERIC_SLOTS = NUM_BANKGENERIC_SLOTS or 28
+local NUM_BANK_BAGS = NUM_BANKBAGSLOTS or 7
+local FIRST_BANK_BAG_ID = (NUM_BAG_FRAMES or 4) + 1
+local LAST_BANK_BAG_ID = FIRST_BANK_BAG_ID + NUM_BANK_BAGS - 1
+local EMPTY_SLOT_TEXTURE = "Interface\\Buttons\\UI-Quickslot2"
+local PURCHASE_SLOT_TEXTURE = "Interface\\Buttons\\UI-PlusButton-Hilight"
 local BOTTOM_BAR_HEIGHT = HEADER_HEIGHT + INVENTORY_BAR_GAP + BAG_BAR_HEIGHT + BOTTOM_BAR_OFFSET
 local BOTTOM_BAR_LEVEL = 30
 local CLOSE_BUTTON_SIZE = 16
@@ -28,6 +35,8 @@ local HIGHLIGHT_BAG_ALPHA = 0.58
 local HIGHLIGHT_SLOT_ALPHA = 0.2
 local HIGHLIGHT_DIM_ALPHA = 0.6
 local GREY_JUNK_DIM_ALPHA = 0.35
+local EMPTY_SLOT_BORDER_R, EMPTY_SLOT_BORDER_G, EMPTY_SLOT_BORDER_B = 0.42, 0.42, 0.45
+local EMPTY_SLOT_BORDER_ALPHA = 0.75
 
 local SECTION_DEFS = {
   { id = "bags", title = "Inventory", order = 1 },
@@ -50,6 +59,8 @@ local lastSlotCount = 0
 local lastLayoutKey = ""
 local lastSettingsKey = ""
 local merchantBagsActive = false
+local BagHighlight = {}
+
 
 local function IsMerchantOpen()
   return merchantBagsActive or (MerchantFrame and MerchantFrame:IsShown())
@@ -133,6 +144,61 @@ local function GetButtonNormalTexture(button)
   end
 end
 
+local function IsBankContainer(bagID)
+  return bagID == BANK_CONTAINER_ID or (bagID >= FIRST_BANK_BAG_ID and bagID <= LAST_BANK_BAG_ID)
+end
+
+local function EnsureSlotIcon(button)
+  if button.icon then
+    return button.icon
+  end
+
+  if button.GetName then
+    local icon = _G[button:GetName() .. "IconTexture"]
+    if icon then
+      button.icon = icon
+    end
+  end
+
+  return button.icon
+end
+
+local function ApplyEmptySlotBackground(button, slotSize)
+  EnsureSlotIcon(button)
+
+  local icon = button.icon
+  if icon then
+    icon:Show()
+    icon:SetTexture(EMPTY_SLOT_TEXTURE)
+    icon:SetSize(slotSize, slotSize)
+    icon:ClearAllPoints()
+    icon:SetPoint("CENTER", button, "CENTER")
+    if icon.SetVertexColor then
+      icon:SetVertexColor(0.45, 0.45, 0.45, 0.95)
+    end
+  end
+
+  local normal = GetButtonNormalTexture(button)
+  if normal then
+    normal:Hide()
+  end
+  if button.ExtendedSlot then
+    button.ExtendedSlot:Hide()
+  end
+  if button.IconOverlay then
+    button.IconOverlay:Hide()
+  end
+  if button.SlotTexture then
+    button.SlotTexture:Hide()
+  end
+  if button.GetName then
+    local slotTexture = _G[button:GetName() .. "SlotTexture"]
+    if slotTexture then
+      slotTexture:Hide()
+    end
+  end
+end
+
 local function HideEmptySlotArt(button)
   local normal = GetButtonNormalTexture(button)
   if normal then
@@ -143,6 +209,15 @@ local function HideEmptySlotArt(button)
   end
   if button.IconOverlay then
     button.IconOverlay:Hide()
+  end
+  if button.SlotTexture then
+    button.SlotTexture:Hide()
+  end
+  if button.GetName then
+    local slotTexture = _G[button:GetName() .. "SlotTexture"]
+    if slotTexture then
+      slotTexture:Hide()
+    end
   end
 end
 
@@ -259,36 +334,13 @@ local function IsTeaBagSlot(button)
   return name and name:match("^TeaBagSlot") ~= nil
 end
 
-local slotInteractionHooksInstalled = false
-
-local function InstallSlotInteractionHooks()
-  if slotInteractionHooksInstalled then
-    return
-  end
-  slotInteractionHooksInstalled = true
-
-  if ContainerFrameItemButton_OnEnter then
-    hooksecurefunc("ContainerFrameItemButton_OnEnter", function(self)
-      if not IsTeaBagSlot(self) then
-        return
-      end
-
-      local bag = GetSlotBagAndSlot(self)
-      if bag then
-        SetHighlightedBag(bag, false)
-      end
-    end)
+local function IsTeaBankSlot(button)
+  if not button or not button.GetName then
+    return false
   end
 
-  if ContainerFrameItemButton_OnLeave then
-    hooksecurefunc("ContainerFrameItemButton_OnLeave", function(self)
-      if not IsTeaBagSlot(self) then
-        return
-      end
-
-      ClearBagHighlight()
-    end)
-  end
+  local name = button:GetName()
+  return name and name:match("^TeaBankSlot") ~= nil
 end
 
 local function UpdateSlotHighlight(button)
@@ -343,7 +395,7 @@ local function UpdateSlotHighlights()
   end
 end
 
-local function SetHighlightedBag(bagID, highlightSlots)
+function BagHighlight.Set(bagID, highlightSlots)
   if highlightedBagID == bagID and highlightBagSlots == (bagID ~= nil and highlightSlots == true) then
     return
   end
@@ -354,8 +406,49 @@ local function SetHighlightedBag(bagID, highlightSlots)
   UpdateEquippedBagHighlights()
 end
 
-local function ClearBagHighlight()
-  SetHighlightedBag(nil)
+function BagHighlight.Clear()
+  BagHighlight.Set(nil)
+end
+
+local slotInteractionHooksInstalled = false
+
+local function InstallSlotInteractionHooks()
+  if slotInteractionHooksInstalled then
+    return
+  end
+  slotInteractionHooksInstalled = true
+
+  if ContainerFrameItemButton_OnEnter then
+    hooksecurefunc("ContainerFrameItemButton_OnEnter", function(self)
+      local bag = GetSlotBagAndSlot(self)
+      if not bag then
+        return
+      end
+
+      if IsTeaBagSlot(self) then
+        BagHighlight.Set(bag, false)
+      elseif IsTeaBankSlot(self) then
+        if Tea_OneBagHighlightBankBag then
+          local highlightBag = (bag ~= BANK_CONTAINER_ID) and bag or nil
+          Tea_OneBagHighlightBankBag(highlightBag, false)
+        end
+      end
+    end)
+  end
+
+  if ContainerFrameItemButton_OnLeave then
+    hooksecurefunc("ContainerFrameItemButton_OnLeave", function(self)
+      if IsTeaBagSlot(self) then
+        BagHighlight.Clear()
+      elseif IsTeaBankSlot(self) then
+        if Tea_OneBagScheduleClearBankBagHighlight then
+          Tea_OneBagScheduleClearBankBagHighlight()
+        elseif Tea_OneBagClearBankBagHighlight then
+          Tea_OneBagClearBankBagHighlight()
+        end
+      end
+    end)
+  end
 end
 
 local function GetBagFamily(bag)
@@ -506,7 +599,15 @@ local function ApplySlotQualityBorder(button, quality, hasItem)
   end
 
   if not hasItem then
-    Tea_Util.SetButtonRoundedIconBorderColor(button, "TeaQualityBorder", nil, nil, nil, false)
+    Tea_Util.SetButtonRoundedIconBorderColor(
+      button,
+      "TeaQualityBorder",
+      EMPTY_SLOT_BORDER_R,
+      EMPTY_SLOT_BORDER_G,
+      EMPTY_SLOT_BORDER_B,
+      true,
+      EMPTY_SLOT_BORDER_ALPHA
+    )
     return
   end
 
@@ -516,13 +617,156 @@ local function ApplySlotQualityBorder(button, quality, hasItem)
   Tea_Util.SetButtonRoundedIconBorderColor(button, "TeaQualityBorder", r, g, b, r ~= nil, alpha)
 end
 
+local function SafeGetItemInfo(idOrLink)
+  if not idOrLink or not GetItemInfo then
+    return
+  end
+
+  local ok, _, itemQuality, _, _, _, _, _, _, itemTexture = pcall(GetItemInfo, idOrLink)
+  if ok then
+    return itemTexture, itemQuality
+  end
+end
+
+local function GetItemInfoFromLinkOrID(hyperlink, itemID)
+  local texture, quality = SafeGetItemInfo(hyperlink)
+
+  if not texture then
+    local fallbackTexture, fallbackQuality = SafeGetItemInfo(itemID)
+    texture = fallbackTexture
+    quality = quality or fallbackQuality
+  end
+
+  return texture, quality
+end
+
+local function GetSlotItemInfo(bag, slot)
+  if bag == nil or slot == nil then
+    return
+  end
+
+  local texture, count, locked, quality, readable, loot, hyperlink, filtered, noValue, itemID
+
+  if IsBankContainer(bag) and GetContainerItemInfo then
+    texture, count, locked, quality, readable, loot, hyperlink, filtered, noValue, itemID =
+      GetContainerItemInfo(bag, slot)
+  end
+
+  if not texture then
+    local utilTexture, utilCount, utilLocked, utilQuality, utilReadable, utilLoot, utilLink, utilFiltered, utilNoValue, utilItemID =
+      Tea_Util.GetContainerItemInfo(bag, slot)
+    texture = utilTexture
+    count = count or utilCount
+    locked = locked or utilLocked
+    quality = quality or utilQuality
+    readable = readable or utilReadable
+    loot = loot or utilLoot
+    hyperlink = hyperlink or utilLink
+    filtered = filtered or utilFiltered
+    noValue = noValue or utilNoValue
+    itemID = itemID or utilItemID
+  end
+
+  if not itemID then
+    itemID = Tea_Util.GetContainerItemID(bag, slot)
+  end
+
+  if not hyperlink then
+    if C_Container and C_Container.GetContainerItemLink then
+      hyperlink = C_Container.GetContainerItemLink(bag, slot)
+    elseif GetContainerItemLink then
+      hyperlink = GetContainerItemLink(bag, slot)
+    end
+  end
+
+  if not texture then
+    local fallbackTexture, fallbackQuality = GetItemInfoFromLinkOrID(hyperlink, itemID)
+    texture = fallbackTexture
+    quality = quality or fallbackQuality
+  end
+
+  if quality == nil and itemID then
+    local _, itemQuality = SafeGetItemInfo(itemID)
+    quality = itemQuality
+  end
+
+  return texture, count, locked, quality, readable, loot, hyperlink, filtered, noValue, itemID
+end
+
+local function SetSlotItemTexture(button, texture)
+  if not texture then
+    return
+  end
+
+  SetItemButtonTexture(button, texture)
+  EnsureSlotIcon(button)
+
+  if button.icon then
+    button.icon:SetTexture(texture)
+    button.icon:Show()
+  end
+end
+
+local function ApplyTeaSlotItemVisuals(button, slotSize, texture, count, itemID, quality)
+  if texture then
+    SetSlotItemTexture(button, texture)
+    SetItemButtonCount(button, count or 0)
+    HideEmptySlotArt(button)
+  elseif itemID then
+    local fallbackTexture, fallbackQuality = GetItemInfoFromLinkOrID(nil, itemID)
+    quality = quality or fallbackQuality
+    if fallbackTexture then
+      SetSlotItemTexture(button, fallbackTexture)
+      SetItemButtonCount(button, count or 0)
+      HideEmptySlotArt(button)
+      texture = fallbackTexture
+    else
+      SetItemButtonTexture(button, nil)
+      SetItemButtonCount(button, 0)
+      EnsureSlotIcon(button)
+      if button.icon then
+        button.icon:Hide()
+      end
+      HideEmptySlotArt(button)
+      itemID = nil
+      quality = nil
+    end
+  else
+    SetItemButtonTexture(button, nil)
+    SetItemButtonCount(button, 0)
+    EnsureSlotIcon(button)
+    if button.icon then
+      button.icon:Hide()
+    end
+    HideEmptySlotArt(button)
+    itemID = nil
+    quality = nil
+  end
+
+  if button.teaSlotPrepared ~= slotSize then
+    ApplySlotButtonSize(button, slotSize)
+    button.teaSlotPrepared = slotSize
+  elseif button.icon and texture then
+    SetSlotItemTexture(button, texture)
+    HideEmptySlotArt(button)
+  end
+
+  if not texture then
+    ApplyEmptySlotBackground(button, slotSize)
+  end
+
+  return itemID, quality, texture ~= nil
+end
+
 local function UpdateSlot(button)
   local bag, slot = GetSlotBagAndSlot(button)
   if not bag or not slot then
     return
   end
 
-  local texture, count, locked, quality, _, _, hyperlink, _, _, itemID = Tea_Util.GetContainerItemInfo(bag, slot)
+  local texture, count, locked, quality, _, _, hyperlink, _, _, itemID = GetSlotItemInfo(bag, slot)
+  local slotSize = GetSlotSize()
+  local hasItem
 
   if button.NewItemTexture then
     button.NewItemTexture:Hide()
@@ -531,23 +775,8 @@ local function UpdateSlot(button)
     button.BattlepayItemTexture:Hide()
   end
 
-  if texture then
-    SetItemButtonTexture(button, texture)
-    SetItemButtonCount(button, count or 0)
-    if button.icon then
-      button.icon:Show()
-    end
-  else
-    SetItemButtonTexture(button, nil)
-    SetItemButtonCount(button, 0)
-    if button.icon then
-      button.icon:Hide()
-    end
-    itemID = nil
-    quality = nil
-  end
+  itemID, quality, hasItem = ApplyTeaSlotItemVisuals(button, slotSize, texture, count, itemID, quality)
 
-  HideEmptySlotArt(button)
   SetupSlotHover(button)
 
   if button.Cooldown then
@@ -560,10 +789,15 @@ local function UpdateSlot(button)
     CooldownFrame_Set(button.Cooldown, start, duration, enable)
   end
 
-  ApplySlotButtonSize(button, GetSlotSize())
-  ApplySlotIconAppearance(button, quality, texture ~= nil)
-  UpdateSlotHighlight(button)
-  ApplySlotQualityBorder(button, quality, texture ~= nil)
+  ApplySlotIconAppearance(button, quality, hasItem)
+  if IsTeaBankSlot(button) then
+    if Tea_OneBagUpdateBankSlotHighlight then
+      Tea_OneBagUpdateBankSlotHighlight(button)
+    end
+  else
+    UpdateSlotHighlight(button)
+  end
+  ApplySlotQualityBorder(button, quality, hasItem)
 
   if Tea_UpdateTrackBorder then
     Tea_UpdateTrackBorder(button, itemID)
@@ -574,11 +808,22 @@ local function UpdateSlot(button)
   end
 end
 
+
 local function RefreshEquippedBags()
   for _, button in ipairs(equippedBagButtons) do
     if button:IsShown() and button.bagID and button.icon then
       button.icon:SetTexture(GetBagIconTexture(button.bagID))
     end
+  end
+end
+
+local function UpdateMoney()
+  if not moneyFrame then
+    return
+  end
+
+  if MoneyFrame_Update then
+    MoneyFrame_Update(moneyFrame:GetName(), GetMoney())
   end
 end
 
@@ -603,10 +848,18 @@ local function RefreshBag()
 end
 
 function Tea_BagRefreshTracks()
-  if not frame or not frame:IsShown() then
-    return
+  for _, button in ipairs(slotButtons) do
+    if button:IsShown() and Tea_UpdateTrackBorder then
+      local bag, slot = GetSlotBagAndSlot(button)
+      if bag and slot then
+        Tea_UpdateTrackBorder(button, Tea_Util.GetContainerItemID(bag, slot))
+      end
+    end
   end
-  RefreshBag()
+
+  if Tea_BankRefreshTracks then
+    Tea_BankRefreshTracks()
+  end
 end
 
 local function CreateSlotButton(index, bagID)
@@ -637,6 +890,52 @@ local function ShowEquippedBagTooltip(self)
   GameTooltip:Show()
 end
 
+local function HandleEquippedBagPickup(self)
+  if self.bagID == BACKPACK_CONTAINER then
+    return
+  end
+
+  local inventorySlot = GetBagInventorySlot(self.bagID)
+  if not inventorySlot then
+    return
+  end
+
+  if PickupBagFromSlot then
+    PickupBagFromSlot(inventorySlot)
+  elseif PickupInventoryItem then
+    PickupInventoryItem(inventorySlot)
+  end
+end
+
+local function HandleEquippedBagClick(self, mouseButton)
+  if IsModifiedClick and IsModifiedClick("PICKUPACTION") then
+    HandleEquippedBagPickup(self)
+    return
+  end
+
+  if mouseButton == "RightButton" then
+    return
+  end
+
+  if self.bagID == BACKPACK_CONTAINER then
+    local hadItem = PutItemInBackpack and PutItemInBackpack()
+    if not hadItem and ToggleBackpack then
+      ToggleBackpack()
+    end
+    return
+  end
+
+  local inventorySlot = GetBagInventorySlot(self.bagID)
+  if not inventorySlot then
+    return
+  end
+
+  local hadItem = PutItemInBag and PutItemInBag(inventorySlot)
+  if not hadItem and ToggleBag then
+    ToggleBag(self.bagID)
+  end
+end
+
 local function CreateEquippedBagButton(index)
   local button = CreateFrame("Button", "TeaEquippedBag" .. index, bagBarFrame)
   button:SetSize(BAG_ICON_SIZE, BAG_ICON_SIZE)
@@ -653,12 +952,21 @@ local function CreateEquippedBagButton(index)
   button.border = border
 
   button:SetScript("OnEnter", function(self)
-    SetHighlightedBag(self.bagID, true)
+    BagHighlight.Set(self.bagID, true)
     ShowEquippedBagTooltip(self)
   end)
   button:SetScript("OnLeave", function(self)
-    ClearBagHighlight()
+    BagHighlight.Clear()
     GameTooltip:Hide()
+  end)
+  button:RegisterForDrag("LeftButton")
+  button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+  button:SetScript("OnClick", function(self, mouseButton)
+    HandleEquippedBagClick(self, mouseButton)
+  end)
+  button:SetScript("OnDragStart", HandleEquippedBagPickup)
+  button:SetScript("OnReceiveDrag", function(self)
+    HandleEquippedBagClick(self, "LeftButton")
   end)
 
   return button
@@ -721,16 +1029,6 @@ local function GetOrCreateHeader(index, title)
   header:SetText(title)
   header:Show()
   return header
-end
-
-local function UpdateMoney()
-  if not moneyFrame then
-    return
-  end
-
-  if MoneyFrame_Update then
-    MoneyFrame_Update(moneyFrame:GetName(), GetMoney())
-  end
 end
 
 local function LayoutSectionSlots(section, startY, buttonIndex, columns, slotSize, slotPadding)
@@ -843,7 +1141,7 @@ local function BuildFrame()
   frame:SetScript("OnDragStart", frame.StartMoving)
   frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
   frame:SetScript("OnHide", function()
-    SetHighlightedBag(nil)
+    BagHighlight.Clear()
   end)
   frame:Hide()
 
@@ -888,13 +1186,25 @@ local function BuildFrame()
 end
 
 function Tea_BagRelayout()
-  if not frame then
+  if not IsEnabled() then
+    if frame and frame:IsShown() then
+      frame:Hide()
+    end
+    if Tea_RestoreBlizzardBank then
+      Tea_RestoreBlizzardBank()
+    end
     return
   end
 
-  LayoutSlots()
-  if frame:IsShown() then
-    RefreshBag()
+  if frame then
+    LayoutSlots()
+    if frame:IsShown() then
+      RefreshBag()
+    end
+  end
+
+  if Tea_BankRelayout then
+    Tea_BankRelayout()
   end
 end
 
@@ -961,6 +1271,40 @@ local origOpenAllBags
 local origOpenBag
 local origOpenBackpack
 local origGenerateContainerFrame
+local origToggleBackpack
+
+local bagSuppressionState = {
+  openAllHooked = false,
+  openBagHooked = false,
+  openBackpackHooked = false,
+  closeAllHooked = false,
+  generateHooked = false,
+  backpackToggleHooked = false,
+}
+
+local function InstallBackpackToggleHook()
+  if bagSuppressionState.backpackToggleHooked or not ToggleBackpack then
+    return
+  end
+
+  origToggleBackpack = ToggleBackpack
+  ToggleBackpack = function()
+    if IsEnabled() then
+      if IsMerchantOpen() then
+        if Tea_BagIsOpen and Tea_BagIsOpen() then
+          Tea_CloseBag()
+          return
+        end
+        OpenBagsForMerchant(MerchantFrame)
+        return
+      end
+      Tea_ToggleBag()
+    else
+      origToggleBackpack()
+    end
+  end
+  bagSuppressionState.backpackToggleHooked = true
+end
 
 local function GuardBlizzardBagFrame(bagFrame)
   if not bagFrame or bagFrame.teaBagGuarded then
@@ -987,8 +1331,12 @@ end
 
 local function SetupBlizzardBagSuppression()
   GuardAllBlizzardBagFrames()
+  InstallBackpackToggleHook()
+  if Tea_InstallBankHooks then
+    Tea_InstallBankHooks()
+  end
 
-  if OpenAllBags and not SetupBlizzardBagSuppression.openAllHooked then
+  if OpenAllBags and not bagSuppressionState.openAllHooked then
     origOpenAllBags = OpenAllBags
     _G.OpenAllBags = function(merchantFrame)
       if OpenBagsForMerchant(merchantFrame) then
@@ -996,10 +1344,10 @@ local function SetupBlizzardBagSuppression()
       end
       origOpenAllBags(merchantFrame)
     end
-    SetupBlizzardBagSuppression.openAllHooked = true
+    bagSuppressionState.openAllHooked = true
   end
 
-  if OpenBag and not SetupBlizzardBagSuppression.openBagHooked then
+  if OpenBag and not bagSuppressionState.openBagHooked then
     origOpenBag = OpenBag
     _G.OpenBag = function(id, force)
       if IsEnabled() then
@@ -1008,10 +1356,10 @@ local function SetupBlizzardBagSuppression()
       end
       origOpenBag(id, force)
     end
-    SetupBlizzardBagSuppression.openBagHooked = true
+    bagSuppressionState.openBagHooked = true
   end
 
-  if OpenBackpack and not SetupBlizzardBagSuppression.openBackpackHooked then
+  if OpenBackpack and not bagSuppressionState.openBackpackHooked then
     origOpenBackpack = OpenBackpack
     _G.OpenBackpack = function()
       if IsEnabled() then
@@ -1023,10 +1371,10 @@ local function SetupBlizzardBagSuppression()
       end
       origOpenBackpack()
     end
-    SetupBlizzardBagSuppression.openBackpackHooked = true
+    bagSuppressionState.openBackpackHooked = true
   end
 
-  if CloseAllBags and not SetupBlizzardBagSuppression.closeAllHooked then
+  if CloseAllBags and not bagSuppressionState.closeAllHooked then
     local origCloseAllBags = CloseAllBags
     _G.CloseAllBags = function(...)
       if IsEnabled() and IsMerchantOpen() then
@@ -1036,10 +1384,10 @@ local function SetupBlizzardBagSuppression()
       end
       origCloseAllBags(...)
     end
-    SetupBlizzardBagSuppression.closeAllHooked = true
+    bagSuppressionState.closeAllHooked = true
   end
 
-  if ContainerFrame_GenerateFrame and not SetupBlizzardBagSuppression.generateHooked then
+  if ContainerFrame_GenerateFrame and not bagSuppressionState.generateHooked then
     origGenerateContainerFrame = ContainerFrame_GenerateFrame
     _G.ContainerFrame_GenerateFrame = function(frame, size, id)
       if IsEnabled() then
@@ -1047,7 +1395,7 @@ local function SetupBlizzardBagSuppression()
       end
       origGenerateContainerFrame(frame, size, id)
     end
-    SetupBlizzardBagSuppression.generateHooked = true
+    bagSuppressionState.generateHooked = true
   end
 end
 
@@ -1119,33 +1467,33 @@ eventFrame:SetScript("OnEvent", function(_, event)
   elseif event == "MERCHANT_CLOSED" then
     merchantBagsActive = false
   elseif event == "PLAYER_LOGIN" then
-    if not eventFrame.backpackHooked and ToggleBackpack then
-      local origToggleBackpack = ToggleBackpack
-      ToggleBackpack = function()
-        if IsEnabled() then
-          if IsMerchantOpen() then
-            OpenBagsForMerchant(MerchantFrame)
-            return
-          end
-          Tea_ToggleBag()
-        else
-          origToggleBackpack()
-        end
-      end
-      eventFrame.backpackHooked = true
-    end
-
     SetupBlizzardBagSuppression()
   elseif event == "PLAYER_ENTERING_WORLD" then
     SetupBlizzardBagSuppression()
   end
 end)
 
-local function ScheduleBagSuppressionSetup()
+
+Tea_OneBag = {
+  IsEnabled = IsEnabled,
+  GetColumns = GetColumns,
+  GetSlotSize = GetSlotSize,
+  GetSlotPadding = GetSlotPadding,
+  GetGridWidth = GetGridWidth,
+  GetSettingsKey = GetSettingsKey,
+  ShowBagFrame = ShowBagFrame,
+  UpdateSlot = UpdateSlot,
+  GetSlotBagAndSlot = GetSlotBagAndSlot,
+  EnsureSlotHighlight = EnsureSlotHighlight,
+  GetSlotIconAlpha = GetSlotIconAlpha,
+  GetButtonNormalTexture = GetButtonNormalTexture,
+  HideEmptySlotArt = HideEmptySlotArt,
+  SetupSlotHover = SetupSlotHover,
+  EnsureSlotIcon = EnsureSlotIcon,
+  ApplySlotButtonSize = ApplySlotButtonSize,
+}
+
+function Tea_FinishOneBagLoad()
   SetupBlizzardBagSuppression()
   Tea_Util.After(0, SetupBlizzardBagSuppression)
-end
-
-if UnitName("player") then
-  ScheduleBagSuppressionSetup()
 end

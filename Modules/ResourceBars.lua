@@ -23,7 +23,11 @@ local PLAYER_UNIT_EVENTS = {
   "UNIT_MAXHEALTH",
   "UNIT_POWER_UPDATE",
   "UNIT_MAXPOWER",
+}
+
+local OPTIONAL_PLAYER_UNIT_EVENTS = {
   "UNIT_DISPLAYPOWER_CHANGED",
+  "UNIT_POWER_FREQUENT",
 }
 
 local function RegisterPlayerUnitEvents(targetFrame)
@@ -36,7 +40,9 @@ local function RegisterPlayerUnitEvents(targetFrame)
   end
 
   if targetFrame.RegisterUnitEvent then
-    pcall(targetFrame.RegisterUnitEvent, targetFrame, "UNIT_POWER_FREQUENT", "player")
+    for _, event in ipairs(OPTIONAL_PLAYER_UNIT_EVENTS) do
+      pcall(targetFrame.RegisterUnitEvent, targetFrame, event, "player")
+    end
   end
 end
 
@@ -482,6 +488,7 @@ end)
 
 local unitFrame = CreateFrame("Frame")
 RegisterPlayerUnitEvents(unitFrame)
+unitFrame:RegisterEvent("UPDATE_SHAPESHIFT_FORM")
 
 unitFrame:SetScript("OnEvent", function(_, event, unit)
   if not ShouldHandleUnitEvent(unit) then

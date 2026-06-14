@@ -10,7 +10,7 @@ usage() {
   cat <<'EOF'
 Usage: scripts/bump-version.sh [--major | --minor | --patch]
 
-Bump TEA_VERSION in scripts/tea-version.sh and sync ## Version in tea.toc (default: patch).
+Bump ## Version in tea.toc and sync scripts/tea-version.sh (default: patch).
 EOF
 }
 
@@ -40,22 +40,19 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-if [[ ! -f "$VERSION_FILE" ]]; then
-  echo "Error: scripts/tea-version.sh not found at $VERSION_FILE" >&2
-  exit 1
-fi
-
 if [[ ! -f "$TOC_FILE" ]]; then
   echo "Error: tea.toc not found at $TOC_FILE" >&2
   exit 1
 fi
 
-# shellcheck source=tea-version.sh
-source "$VERSION_FILE"
+if [[ ! -f "$VERSION_FILE" ]]; then
+  echo "Error: scripts/tea-version.sh not found at $VERSION_FILE" >&2
+  exit 1
+fi
 
-CURRENT="${TEA_VERSION:-}"
+CURRENT="$(grep '^## Version:' "$TOC_FILE" | awk '{print $3}')"
 if [[ -z "$CURRENT" ]]; then
-  echo "Error: TEA_VERSION is not set in scripts/tea-version.sh" >&2
+  echo "Error: could not read version from tea.toc" >&2
   exit 1
 fi
 
@@ -86,6 +83,6 @@ if [[ "$CURRENT" == "$NEXT" ]]; then
   exit 0
 fi
 
-sed -i "s/^TEA_VERSION=.*/TEA_VERSION=\"${NEXT}\"/" "$VERSION_FILE"
 sed -i "s/^## Version: .*/## Version: ${NEXT}/" "$TOC_FILE"
+sed -i "s/^TEA_VERSION=.*/TEA_VERSION=\"${NEXT}\"/" "$VERSION_FILE"
 echo "Version: ${CURRENT} -> ${NEXT}"

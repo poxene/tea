@@ -78,6 +78,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ ! -f "$TOC_FILE" ]]; then
+  echo "Error: tea.toc not found in $PROJECT_DIR" >&2
+  exit 1
+fi
+
 if [[ ! -f "$VERSION_FILE" ]]; then
   echo "Error: scripts/tea-version.sh not found in $PROJECT_DIR" >&2
   exit 1
@@ -86,22 +91,16 @@ fi
 # shellcheck source=tea-version.sh
 source "$VERSION_FILE"
 
-if [[ -z "${TEA_VERSION:-}" ]]; then
-  echo "Error: TEA_VERSION is not set in scripts/tea-version.sh" >&2
+VERSION="$(grep '^## Version:' "$TOC_FILE" | awk '{print $3}')"
+if [[ -z "$VERSION" ]]; then
+  echo "Error: could not read version from tea.toc" >&2
   exit 1
 fi
 
-VERSION="$TEA_VERSION"
-
-if [[ ! -f "$TOC_FILE" ]]; then
-  echo "Error: tea.toc not found in $PROJECT_DIR" >&2
-  exit 1
-fi
-
-TOC_VERSION="$(grep '^## Version:' "$TOC_FILE" | awk '{print $3}')"
-if [[ "$TOC_VERSION" != "$VERSION" ]]; then
-  echo "Error: tea.toc version (${TOC_VERSION}) does not match TEA_VERSION (${VERSION})" >&2
-  exit 1
+if [[ "${TEA_VERSION:-}" != "$VERSION" ]]; then
+  echo "Syncing scripts/tea-version.sh to tea.toc version (${VERSION})"
+  sed -i "s/^TEA_VERSION=.*/TEA_VERSION=\"${VERSION}\"/" "$VERSION_FILE"
+  TEA_VERSION="$VERSION"
 fi
 
 if [[ -z "$OUTPUT_NAME" ]]; then
