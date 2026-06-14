@@ -7,6 +7,8 @@ local MAX_HEIGHT = 140
 local BAR_GAP = 4
 local TEXT_PADDING = 4
 local RESIZE_GRIP_SIZE = 14
+local FRAME_STRATA = "MEDIUM"
+local FRAME_LEVEL = 10
 
 local frame
 local healthBar
@@ -127,6 +129,34 @@ local function IsLocked()
   return GetSettings().locked == true
 end
 
+local function IsBlockingModalOpen()
+  if TeaOptionsFrame and TeaOptionsFrame:IsShown() then
+    return not previewMode
+  end
+  if InterfaceOptionsFrame and InterfaceOptionsFrame:IsShown() then
+    return true
+  end
+  if GameMenuFrame and GameMenuFrame:IsShown() then
+    return true
+  end
+  return false
+end
+
+local function ApplyFrameLayer()
+  if not frame then
+    return
+  end
+
+  if IsBlockingModalOpen() then
+    frame:SetFrameStrata("LOW")
+    frame:SetFrameLevel(1)
+    return
+  end
+
+  frame:SetFrameStrata(FRAME_STRATA)
+  frame:SetFrameLevel(FRAME_LEVEL)
+end
+
 local function GetGripInset()
   if IsLocked() or not resizeGrip or not resizeGrip:IsShown() then
     return 0
@@ -225,6 +255,7 @@ local function ApplyLockState()
     resizeGrip:SetScript("OnMouseUp", function()
       frame:StopMovingOrSizing()
       SaveFrameSettings()
+      ApplyFrameLayer()
     end)
   end
 
@@ -294,7 +325,6 @@ local function GetOrCreateFrame()
 
   local backdropTemplate = BackdropTemplateMixin and "BackdropTemplate" or nil
   frame = CreateFrame("Frame", nil, UIParent, backdropTemplate)
-  frame:SetFrameStrata("HIGH")
   frame:SetClampedToScreen(true)
   frame:SetMovable(true)
   if frame.SetResizable then
@@ -350,6 +380,7 @@ local function GetOrCreateFrame()
   frame:SetScript("OnDragStop", function(self)
     self:StopMovingOrSizing()
     SaveFrameSettings()
+    ApplyFrameLayer()
   end)
   frame:SetScript("OnSizeChanged", function()
     if IsLocked() then
@@ -367,6 +398,7 @@ local function GetOrCreateFrame()
     updateElapsed = updateElapsed + elapsed
     if updateElapsed >= UPDATE_INTERVAL then
       updateElapsed = 0
+      ApplyFrameLayer()
       if Tea_Util and Tea_Util.SafeCall then
         Tea_Util.SafeCall(UpdateBars)
       else
@@ -374,6 +406,8 @@ local function GetOrCreateFrame()
       end
     end
   end)
+
+  ApplyFrameLayer()
 
   return frame
 end
@@ -404,6 +438,7 @@ local function TryShowResourceBars(applyOnly)
 
   ApplyFrameSettings()
   ApplyLockState()
+  ApplyFrameLayer()
   frame:Show()
   updateElapsed = 0
   UpdateBars()
@@ -439,6 +474,7 @@ function Tea_SetResourceBarPreview(active)
   end
 
   previewMode = wantPreview
+  ApplyFrameLayer()
 
   if previewMode then
     Tea_ApplyResourceBarsPosition()
