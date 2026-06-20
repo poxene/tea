@@ -432,6 +432,9 @@ local function InstallSlotInteractionHooks()
           local highlightBag = (bag ~= BANK_CONTAINER_ID) and bag or nil
           Tea_OneBagHighlightBankBag(highlightBag, false)
         end
+        if Tea_OneBagShowBankSlotTooltip then
+          Tea_OneBagShowBankSlotTooltip(self)
+        end
       end
     end)
   end

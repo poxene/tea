@@ -49,6 +49,7 @@ local highlightedBankBagID
 local highlightBankBagSlots = false
 local pinnedBankBagID
 local bankActive = false
+local bankSessionActive = false
 local closingTeaBank = false
 local lastBankSlotCount = 0
 local lastBankLayoutKey = ""
@@ -289,6 +290,21 @@ local function IsFrameOffScreen(target)
   return math.abs(x) > 500 or math.abs(y) > 500
 end
 
+local function IsBankerInteractionAvailable()
+  if CanUseBank then
+    local ok, available = pcall(CanUseBank)
+    if ok and available == false then
+      return false
+    end
+  end
+
+  if UnitExists and UnitExists("npc") and CheckInteractDistance then
+    return CheckInteractDistance("npc", 3) == true
+  end
+
+  return bankSessionActive
+end
+
 local function SuppressBlizzardBankFrame(target)
   if not target or target.teaBankConcealed then
     return
@@ -306,7 +322,7 @@ local function SuppressBlizzardBankFrame(target)
   end
 end
 
-local function RestoreBlizzardBankFrame(target)
+local function ReleaseBlizzardBankConcealment(target)
   if not target then
     return
   end
@@ -319,8 +335,6 @@ local function RestoreBlizzardBankFrame(target)
     if target.EnableMouse then
       target:EnableMouse(true)
     end
-
-    target:Show()
   end
 
   if target.teaBankStoredPoint then
@@ -333,8 +347,6 @@ local function RestoreBlizzardBankFrame(target)
     if target.EnableMouse then
       target:EnableMouse(true)
     end
-
-    target:Show()
   elseif IsFrameOffScreen(target) then
     target:SetAlpha(1)
 
@@ -342,11 +354,30 @@ local function RestoreBlizzardBankFrame(target)
       target:EnableMouse(true)
     end
 
-    target:Show()
-
     if UpdateUIPanelPositions then
       pcall(UpdateUIPanelPositions)
     end
+  end
+end
+
+local function RestoreBlizzardBankFrame(target)
+  if not target then
+    return
+  end
+
+  ReleaseBlizzardBankConcealment(target)
+  target:Show()
+end
+
+local function HideBlizzardBankFrame(target)
+  if not target then
+    return
+  end
+
+  ReleaseBlizzardBankConcealment(target)
+
+  if target.Hide then
+    target:Hide()
   end
 end
 
@@ -359,6 +390,12 @@ end
 local function RestoreBlizzardBankUI()
   for _, frameName in ipairs(BLIZZARD_BANK_UI_FRAMES) do
     RestoreBlizzardBankFrame(_G[frameName])
+  end
+end
+
+local function HideBlizzardBankUI()
+  for _, frameName in ipairs(BLIZZARD_BANK_UI_FRAMES) do
+    HideBlizzardBankFrame(_G[frameName])
   end
 end
 
@@ -763,6 +800,56 @@ local function GetBankBagContainer(bagID)
   return bankBagContainers[bagID]
 end
 
+local function SetBankSlotTooltipOwner(button)
+  if ContainerFrameItemButton_CalculateItemTooltipAnchors then
+    ContainerFrameItemButton_CalculateItemTooltipAnchors(button, GameTooltip)
+    return
+  end
+
+  if button.GetRight and GetScreenWidth and button:GetRight() >= (GetScreenWidth() / 2) then
+    GameTooltip:SetOwner(button, "ANCHOR_LEFT")
+  else
+    GameTooltip:SetOwner(button, "ANCHOR_RIGHT")
+  end
+end
+
+local function ShowBankSlotTooltip(button)
+  local bag, slot = GetSlotBagAndSlot(button)
+  if not bag or not slot then
+    return
+  end
+
+  SetBankSlotTooltipOwner(button)
+
+  if bag == BANK_CONTAINER_ID then
+    local inventorySlot
+    if BankButtonIDToInvSlotID then
+      inventorySlot = BankButtonIDToInvSlotID(slot, false)
+      if not inventorySlot then
+        inventorySlot = BankButtonIDToInvSlotID(slot)
+      end
+    end
+
+    if inventorySlot and GameTooltip.SetInventoryItem then
+      GameTooltip:SetInventoryItem("player", inventorySlot)
+    else
+      local link
+      if C_Container and C_Container.GetContainerItemLink then
+        link = C_Container.GetContainerItemLink(bag, slot)
+      elseif GetContainerItemLink then
+        link = GetContainerItemLink(bag, slot)
+      end
+      if link and GameTooltip.SetHyperlink then
+        GameTooltip:SetHyperlink(link)
+      end
+    end
+  elseif GameTooltip.SetBagItem then
+    GameTooltip:SetBagItem(bag, slot)
+  end
+
+  GameTooltip:Show()
+end
+
 local function CreateBankSlotButton(index, bagID)
   local button = CreateFrame("Button", "TeaBankSlot" .. index, GetBankBagContainer(bagID), "ContainerFrameItemButtonTemplate")
 
@@ -776,6 +863,7 @@ local function CreateBankSlotButton(index, bagID)
   SetupSlotHover(button)
   EnsureSlotIcon(button)
   ApplySlotButtonSize(button, GetSlotSize())
+  button.UpdateTooltip = ShowBankSlotTooltip
   return button
 end
 
@@ -1155,10 +1243,10 @@ local function BuildBankFrame()
     if bankActive then
       closingTeaBank = true
       bankActive = false
+      bankSessionActive = false
+      HideBlizzardBankUI()
       if CloseBankFrame then
         CloseBankFrame()
-      else
-        RestoreBlizzardBankUI()
       end
       closingTeaBank = false
     end
@@ -1222,7 +1310,7 @@ local function EndTeaBankSession()
   pinnedBankBagID = nil
   HideBankSlotPurchaseDialog()
   ClearBankBagHighlight()
-  RestoreBlizzardBankUI()
+  HideBlizzardBankUI()
   if bankFrame then
     bankFrame:Hide()
   end
@@ -1239,10 +1327,11 @@ end
 function Tea_CloseBank()
   closingTeaBank = true
   bankActive = false
+  bankSessionActive = false
   pinnedBankBagID = nil
   HideBankSlotPurchaseDialog()
   ClearBankBagHighlight()
-  RestoreBlizzardBankUI()
+  HideBlizzardBankUI()
   if bankFrame then
     bankFrame:Hide()
   end
@@ -1253,13 +1342,12 @@ function Tea_CloseBank()
 end
 
 local function HandleBankOpen()
-  if not IsEnabled() then
-    DisableCustomBankUI()
+  if not IsEnabled() or not bankSessionActive then
     return
   end
 
   local function tryShow()
-    if not IsEnabled() then
+    if not IsEnabled() or not bankSessionActive then
       return
     end
 
@@ -1276,11 +1364,14 @@ local function HandleBankClose()
     return
   end
 
+  bankSessionActive = false
+
   if not IsEnabled() then
     bankActive = false
     if bankFrame then
       bankFrame:Hide()
     end
+    HideBlizzardBankUI()
     return
   end
 
@@ -1310,6 +1401,19 @@ function Tea_InstallBankHooks()
 
   if BankFrame then
     BankFrame:HookScript("OnShow", function()
+      if not bankSessionActive then
+        if IsEnabled() then
+          SuppressBlizzardBankUI()
+        end
+        if not IsBankerInteractionAvailable() then
+          if BankFrame.Hide then
+            BankFrame:Hide()
+          end
+          HideBlizzardBankUI()
+        end
+        return
+      end
+
       if not IsEnabled() then
         RestoreBlizzardBankUI()
         RefreshBlizzardBankDisplay()
@@ -1317,7 +1421,6 @@ function Tea_InstallBankHooks()
       end
 
       SuppressBlizzardBankUI()
-      HandleBankOpen()
     end)
   end
 
@@ -1337,6 +1440,10 @@ end
 
 function Tea_OneBagHighlightBankBag(bagID, highlightSlots)
   SetHighlightedBankBag(bagID, highlightSlots)
+end
+
+function Tea_OneBagShowBankSlotTooltip(button)
+  ShowBankSlotTooltip(button)
 end
 
 function Tea_OneBagClearBankBagHighlight()
@@ -1378,8 +1485,10 @@ bankEventFrame:SetScript("OnEvent", function(_, event)
       OnBankUpdate()
     end
   elseif event == "BANKFRAME_OPENED" then
+    bankSessionActive = true
     HandleBankOpen()
   elseif event == "BANKFRAME_CLOSED" then
+    bankSessionActive = false
     HandleBankClose()
   elseif event == "PLAYERBANKSLOTS_CHANGED" or event == "PLAYERBANKBAGSLOTS_CHANGED" then
     if IsBankOpen() then
