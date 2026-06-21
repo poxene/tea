@@ -5,7 +5,6 @@ local PANE_HEIGHT = 426
 local PANE_X = -32
 local PANE_Y = -13
 local ROW_HEIGHT = 14
-local SECTION_GAP = 8
 local PADDING = 14
 local VALUE_COLUMN = -10
 local REFRESH_INTERVAL = 0.25
@@ -17,12 +16,12 @@ local TOGGLE_Y_OFFSET = 20
 local TOGGLE_OVERLAP_RATIO = 0.4
 
 local RESISTANCE_SCHOOLS = {
-  { index = 2, label = "Holy" },
-  { index = 3, label = "Fire" },
-  { index = 4, label = "Nature" },
-  { index = 5, label = "Frost" },
-  { index = 6, label = "Shadow" },
-  { index = 7, label = "Arcane" },
+  { index = 1, fallback = "Holy" },
+  { index = 2, fallback = "Fire" },
+  { index = 3, fallback = "Nature" },
+  { index = 4, fallback = "Frost" },
+  { index = 5, fallback = "Shadow" },
+  { index = 6, fallback = "Arcane" },
 }
 
 local RATING_ENTRIES = {
@@ -59,8 +58,22 @@ local function IsEnabled()
   return Tea_GetDB().modules.advancedStats == true
 end
 
+local function IsShortLabel(text)
+  if type(text) ~= "string" or text == "" then
+    return false
+  end
+  if #text > 22 then
+    return false
+  end
+  local lower = text:lower()
+  if text:find("%%") or lower:find("increase") or lower:find("your ") or lower:find(" by ") then
+    return false
+  end
+  return true
+end
+
 local function SafeLabel(value, fallback)
-  if type(value) == "string" and value ~= "" then
+  if IsShortLabel(value) then
     return value
   end
   return fallback
@@ -193,6 +206,16 @@ local function GetSpellCrit()
   return best
 end
 
+local function GetResistanceLabel(index, fallback)
+  local cap = _G["SPELL_SCHOOL" .. (index + 1) .. "_CAP"]
+  return SafeLabel(cap, fallback)
+end
+
+local function GetTotalResistance(unit, index)
+  local _, total = SafeCall(UnitResistance, unit, index)
+  return AsNumber(total)
+end
+
 local function GetNotCastingManaRegen()
   if type(GetManaRegen) ~= "function" then
     return nil
@@ -243,17 +266,17 @@ local function BuildStatLines()
   AddSection(lines, SafeLabel(MELEE, "Melee"))
   local minDamage, maxDamage = SafeCall(UnitDamage, unit)
   AddLine(lines, SafeLabel(DAMAGE, "Damage"), FormatRange(minDamage, maxDamage))
-  AddLine(lines, SafeLabel(ATTACK_POWER, "Attack Power"), Round(SafeCall(UnitAttackPower, unit)))
+  AddLine(lines, "Attack Power", Round(SafeCall(UnitAttackPower, unit)))
   AddLine(lines, SafeLabel(ATTACK_SPEED, "Speed"), FormatSpeed(SafeCall(UnitAttackSpeed, unit)))
-  AddLine(lines, SafeLabel(ITEM_MOD_CRIT_RATING, "Critical Strike"), FormatPercent(SafeCall(GetCritChance)))
+  AddLine(lines, "Critical Strike Chance", FormatPercent(SafeCall(GetCritChance)))
 
   if HasRangedStats() then
     AddSection(lines, SafeLabel(RANGED, "Ranged"))
     local rangedMin, rangedMax = SafeCall(UnitRangedDamage, unit)
     AddLine(lines, SafeLabel(DAMAGE, "Damage"), FormatRange(rangedMin, rangedMax))
-    AddLine(lines, SafeLabel(ATTACK_POWER, "Attack Power"), Round(SafeCall(UnitRangedAttackPower, unit)))
+    AddLine(lines, "Attack Power", Round(SafeCall(UnitRangedAttackPower, unit)))
     AddLine(lines, SafeLabel(ATTACK_SPEED, "Speed"), FormatSpeed(SafeCall(UnitRangedAttackSpeed, unit)))
-    AddLine(lines, SafeLabel(ITEM_MOD_CRIT_RATING, "Critical Strike"), FormatPercent(SafeCall(GetRangedCritChance)))
+    AddLine(lines, "Critical Strike Chance", FormatPercent(SafeCall(GetRangedCritChance)))
   end
 
   local spellDamage = GetSpellDamage()
@@ -269,7 +292,7 @@ local function BuildStatLines()
       AddLine(lines, SafeLabel(SPELL_BONUS_HEALING, "Bonus Healing"), "+" .. Round(spellHealing))
     end
     if spellCrit then
-      AddLine(lines, SafeLabel(ITEM_MOD_CRIT_RATING, "Critical Strike"), FormatPercent(spellCrit))
+      AddLine(lines, "Spell Crit", FormatPercent(spellCrit))
     end
     if manaRegen and manaRegen > 0 then
       AddLine(lines, SafeLabel(MANA_REGEN, "Mana Regeneration"), string.format("%d / 5 sec", Round(manaRegen)))
@@ -328,10 +351,13 @@ local function BuildStatLines()
   local hasResistances = false
   local resistanceLines = {}
   for _, school in ipairs(RESISTANCE_SCHOOLS) do
-    local amount = AsNumber(SafeCall(UnitResistance, unit, school.index))
+    local amount = GetTotalResistance(unit, school.index)
     if amount and amount > 0 then
       hasResistances = true
-      resistanceLines[#resistanceLines + 1] = { label = school.label, value = tostring(Round(amount)) }
+      resistanceLines[#resistanceLines + 1] = {
+        label = GetResistanceLabel(school.index, school.fallback),
+        value = tostring(Round(amount)),
+      }
     end
   end
 
@@ -378,7 +404,7 @@ local function RenderLines(lines)
   local lineIndex = 0
   local y = PADDING
 
-  for _, entry in ipairs(lines) do
+  for index, entry in ipairs(lines) do
     lineIndex = lineIndex + 1
     local fs = AcquireLine(lineIndex)
     fs:ClearAllPoints()
@@ -386,13 +412,10 @@ local function RenderLines(lines)
     fs:SetPoint("TOPRIGHT", scrollChild, "TOPRIGHT", VALUE_COLUMN, -y)
 
     if entry.kind == "section" then
-      if lineIndex > 1 then
-        y = y + SECTION_GAP
-      end
       fs:SetJustifyH("LEFT")
       fs:SetTextColor(1, 0.82, 0)
       fs:SetText(tostring(entry.title or ""))
-      y = y + ROW_HEIGHT + 2
+      y = y + ROW_HEIGHT
     else
       fs:SetJustifyH("LEFT")
       fs:SetText(tostring(entry.label or ""))
@@ -405,6 +428,11 @@ local function RenderLines(lines)
       valueFs:SetTextColor(1, 1, 1)
       valueFs:SetText(entry.value)
       y = y + ROW_HEIGHT
+
+      local nextEntry = lines[index + 1]
+      if not nextEntry or nextEntry.kind == "section" then
+        y = y + ROW_HEIGHT
+      end
     end
   end
 
