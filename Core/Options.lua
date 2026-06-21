@@ -55,18 +55,6 @@ local SECTIONS = {
   {
     id = "tooltip",
     label = "Tooltip",
-    options = {
-      { label = "Enable", path = { "modules", "tooltipExtras" } },
-      { label = "Only while holding Shift", path = { "tooltip", "requireShift" } },
-      { label = "Show vendor price", path = { "tooltip", "showVendorPrice" } },
-      { label = "Show item ID", path = { "tooltip", "showItemId" } },
-      { label = "Show item level", path = { "tooltip", "showItemLevel" } },
-      { label = "Show required level", path = { "tooltip", "showRequiredLevel" } },
-      { label = "Show equipment slot", path = { "tooltip", "showEquipSlot" } },
-      { label = "Show item type", path = { "tooltip", "showItemType" } },
-      { label = "Show max stack size", path = { "tooltip", "showMaxStack" } },
-      { label = "Show tracked item marker", path = { "tooltip", "showTracked" } },
-    },
   },
   { id = "tracking", label = "Tracking" },
   { id = "oneBag", label = "Bags" },
@@ -760,6 +748,66 @@ local function RefreshCastBarsFromOptions()
   end
 end
 
+local function RefreshTooltipFromOptions()
+  if Tea_RefreshDraggableTooltip then
+    Tea_RefreshDraggableTooltip()
+  end
+  if Tea_RefreshTooltipPreview then
+    Tea_RefreshTooltipPreview()
+  end
+end
+
+local function BuildTooltipPanel(content)
+  local header = CreatePanelHeader(content, "Tooltip")
+
+  local hint = content:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+  hint:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -8)
+  hint:SetPoint("RIGHT", content, "RIGHT", -8, 0)
+  hint:SetJustifyH("LEFT")
+  hint:SetText("A preview tooltip appears on screen while this panel is open. Drag it to set its position.")
+
+  local enable = CreateCheckbox(content, "Enable", { "modules", "tooltipExtras" }, hint, -SUBHEADER_TOP, {
+    onChange = RefreshTooltipFromOptions,
+  })
+  local draggable = CreateCheckbox(content, "Draggable tooltip", { "tooltip", "draggable" }, enable, -ROW_SPACING, {
+    onChange = RefreshTooltipFromOptions,
+  })
+  local lock = CreateCheckbox(content, "Lock position", { "tooltip", "locked" }, draggable, -ROW_SPACING, {
+    onChange = RefreshTooltipFromOptions,
+  })
+  local requireShift = CreateCheckbox(content, "Only while holding Shift", { "tooltip", "requireShift" }, lock, -ROW_SPACING, {
+    onChange = RefreshTooltipFromOptions,
+  })
+
+  local linesHeader = CreateSectionSubheader(content, "Extra lines", requireShift, -SUBHEADER_TOP)
+  local vendorPrice = CreateCheckbox(content, "Show vendor price", { "tooltip", "showVendorPrice" }, linesHeader, -8, {
+    onChange = RefreshTooltipFromOptions,
+  })
+  local itemId = CreateCheckbox(content, "Show item ID", { "tooltip", "showItemId" }, vendorPrice, -ROW_SPACING, {
+    onChange = RefreshTooltipFromOptions,
+  })
+  local itemLevel = CreateCheckbox(content, "Show item level", { "tooltip", "showItemLevel" }, itemId, -ROW_SPACING, {
+    onChange = RefreshTooltipFromOptions,
+  })
+  local requiredLevel = CreateCheckbox(content, "Show required level", { "tooltip", "showRequiredLevel" }, itemLevel, -ROW_SPACING, {
+    onChange = RefreshTooltipFromOptions,
+  })
+  local equipSlot = CreateCheckbox(content, "Show equipment slot", { "tooltip", "showEquipSlot" }, requiredLevel, -ROW_SPACING, {
+    onChange = RefreshTooltipFromOptions,
+  })
+  local itemType = CreateCheckbox(content, "Show item type", { "tooltip", "showItemType" }, equipSlot, -ROW_SPACING, {
+    onChange = RefreshTooltipFromOptions,
+  })
+  local maxStack = CreateCheckbox(content, "Show max stack size", { "tooltip", "showMaxStack" }, itemType, -ROW_SPACING, {
+    onChange = RefreshTooltipFromOptions,
+  })
+  local tracked = CreateCheckbox(content, "Show tracked item marker", { "tooltip", "showTracked" }, maxStack, -ROW_SPACING, {
+    onChange = RefreshTooltipFromOptions,
+  })
+
+  return tracked
+end
+
 local function BuildTeaBarsPanel(content)
   local header = CreatePanelHeader(content, "Bars")
 
@@ -1049,6 +1097,14 @@ local function SetNavButtonSelected(button, selected)
   end
 end
 
+local function UpdateTooltipPanelPreview()
+  local tooltipIndex = FindSectionIndex("tooltip")
+  local showPreview = frame and frame:IsShown() and activeSection == tooltipIndex
+  if Tea_SetTooltipPreview then
+    Tea_SetTooltipPreview(showPreview)
+  end
+end
+
 local function UpdateBarsPanelPreview()
   local barsIndex = FindSectionIndex("teaBars")
   local showPreview = frame and frame:IsShown() and activeSection == barsIndex
@@ -1096,6 +1152,7 @@ local function SelectSection(index)
 
   RefreshActivePanel()
   UpdateBarsPanelPreview()
+  UpdateTooltipPanelPreview()
 end
 
 local function CreateNavButton(parent, section, index)
@@ -1154,6 +1211,8 @@ local function BuildSectionPanel(section, index)
     bottom = BuildTeaBankPanel(content)
   elseif section.id == "teaBars" then
     bottom = BuildTeaBarsPanel(content)
+  elseif section.id == "tooltip" then
+    bottom = BuildTooltipPanel(content)
   else
     bottom = BuildOptionsPanel(content, section)
   end
@@ -1170,6 +1229,7 @@ local function RefreshPanel()
   RefreshBarSliders()
   RefreshActivePanel()
   UpdateBarsPanelPreview()
+  UpdateTooltipPanelPreview()
 end
 
 local function BuildPanel()
@@ -1191,6 +1251,9 @@ local function BuildPanel()
     end
     if Tea_SetCastBarPreview then
       Tea_SetCastBarPreview(false)
+    end
+    if Tea_SetTooltipPreview then
+      Tea_SetTooltipPreview(false)
     end
   end)
   frame:Hide()

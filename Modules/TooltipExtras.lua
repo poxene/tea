@@ -1,17 +1,46 @@
 local ADDON_NAME = ...
 
+local draggableInstalled = false
+local previewMode = false
+local previewAnchor
+
+local PREVIEW_ITEM_LINK = "item:6948"
+
+local function IsLocked()
+  return Tea_GetDB().tooltip.locked == true
+end
+
+local function IsDraggableEnabled()
+  local db = Tea_GetDB().tooltip
+  if db.draggable == false then
+    return false
+  end
+  if IsLocked() then
+    return false
+  end
+  return true
+end
+
+local function CanDragTooltip()
+  return IsDraggableEnabled()
+end
+
 local function ShouldShow()
   local db = Tea_GetDB()
   if not db.modules.tooltipExtras then
     return false
   end
-  if db.tooltip.requireShift and not IsShiftKeyDown() then
+  if not previewMode and db.tooltip.requireShift and not IsShiftKeyDown() then
     return false
   end
   return true
 end
 
 local function GetTooltipStackCount(tooltip)
+  if previewMode and tooltip and tooltip.teaPreviewActive then
+    return 1
+  end
+
   local owner = tooltip:GetOwner()
   if not owner then
     return 1
@@ -128,6 +157,293 @@ local function HookTooltip(tooltip)
   tooltip:HookScript("OnTooltipSetItem", SafeAddTooltipLines)
 end
 
+local function SaveTooltipPosition(tooltip)
+  local point, _, relativePoint, x, y = tooltip:GetPoint(1)
+  if not point then
+    return
+  end
+
+  local settings = Tea_GetDB().tooltip
+  settings.dragPoint = point
+  settings.dragRelativePoint = relativePoint or point
+  settings.dragX = math.floor(x + 0.5)
+  settings.dragY = math.floor(y + 0.5)
+  settings.dragUserPositioned = true
+end
+
+local function ApplySavedTooltipPosition(tooltip)
+  local settings = Tea_GetDB().tooltip
+  if not settings.dragUserPositioned then
+    return
+  end
+
+  tooltip:ClearAllPoints()
+  tooltip:SetPoint(
+    settings.dragPoint or "CENTER",
+    UIParent,
+    settings.dragRelativePoint or "CENTER",
+    settings.dragX or 0,
+    settings.dragY or 0
+  )
+end
+
+local function ApplyDefaultPreviewPosition(tooltip)
+  tooltip:ClearAllPoints()
+  tooltip:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
+end
+
+local function ApplyManagedTooltipPosition(tooltip)
+  if not tooltip then
+    return
+  end
+
+  if previewMode and tooltip.teaPreviewActive then
+    if Tea_GetDB().tooltip.dragUserPositioned then
+      ApplySavedTooltipPosition(tooltip)
+    else
+      ApplyDefaultPreviewPosition(tooltip)
+    end
+    return
+  end
+
+  if Tea_GetDB().tooltip.dragUserPositioned then
+    ApplySavedTooltipPosition(tooltip)
+  end
+end
+
+local function ShouldManageTooltipPosition(tooltip)
+  if previewMode and tooltip and tooltip.teaPreviewActive then
+    return true
+  end
+  return Tea_GetDB().tooltip.dragUserPositioned == true
+end
+
+local function ForwardTooltipClickToOwner(tooltip, mouseButton)
+  if mouseButton ~= "RightButton" then
+    return
+  end
+
+  local owner = tooltip:GetOwner()
+  if not owner or owner:GetObjectType() ~= "Button" then
+    return
+  end
+
+  if ContainerFrameItemButton_OnClick then
+    ContainerFrameItemButton_OnClick(owner, mouseButton)
+  elseif owner.Click then
+    owner:Click(mouseButton)
+  end
+end
+
+local function ApplyTooltipClickPassthrough(tooltip)
+  if tooltip.SetPassThroughButtons then
+    tooltip:SetPassThroughButtons("RightButton")
+    tooltip:SetScript("OnMouseUp", nil)
+    return
+  end
+
+  tooltip:SetScript("OnMouseUp", function(self, button)
+    ForwardTooltipClickToOwner(self, button)
+  end)
+end
+
+local function ClearTooltipClickPassthrough(tooltip)
+  if tooltip.SetPassThroughButtons then
+    tooltip:SetPassThroughButtons()
+  end
+  tooltip:SetScript("OnMouseUp", nil)
+end
+
+local function GetOrCreatePreviewAnchor()
+  if not previewAnchor then
+    previewAnchor = CreateFrame("Frame", "TeaTooltipPreviewAnchor", UIParent)
+    previewAnchor:SetSize(1, 1)
+    previewAnchor:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
+  end
+  return previewAnchor
+end
+
+local function HidePreviewTooltip()
+  if not GameTooltip or not GameTooltip.teaPreviewActive then
+    return
+  end
+
+  GameTooltip.teaPreviewActive = nil
+  GameTooltip:Hide()
+end
+
+local function ShowPreviewTooltip()
+  if not previewMode or not GameTooltip then
+    return
+  end
+
+  local anchor = GetOrCreatePreviewAnchor()
+  local previousAlpha = GameTooltip:GetAlpha()
+
+  GameTooltip.teaPreviewActive = true
+  GameTooltip:SetAlpha(0)
+  GameTooltip:Hide()
+
+  GameTooltip:SetOwner(anchor, "ANCHOR_NONE")
+  ApplyManagedTooltipPosition(GameTooltip)
+
+  if GameTooltip.SetHyperlink then
+    GameTooltip:SetHyperlink(PREVIEW_ITEM_LINK)
+  else
+    GameTooltip:SetText("Sample Item")
+  end
+
+  ApplyManagedTooltipPosition(GameTooltip)
+  SafeAddTooltipLines(GameTooltip)
+  GameTooltip:AddLine("Preview", 0.6, 0.8, 1)
+  ApplyManagedTooltipPosition(GameTooltip)
+  GameTooltip:Show()
+  ApplyManagedTooltipPosition(GameTooltip)
+  GameTooltip:SetAlpha(previousAlpha > 0 and previousAlpha or 1)
+end
+
+local function InstallDraggableGameTooltip()
+  if draggableInstalled or not GameTooltip then
+    return
+  end
+  draggableInstalled = true
+
+  if GameTooltip.SetClampedToScreen then
+    GameTooltip:SetClampedToScreen(true)
+  end
+
+  GameTooltip:HookScript("OnShow", function(self)
+    if not ShouldManageTooltipPosition(self) then
+      return
+    end
+    ApplyManagedTooltipPosition(self)
+  end)
+
+  if GameTooltip.SetOwner then
+    hooksecurefunc(GameTooltip, "SetOwner", function(self)
+      if not ShouldManageTooltipPosition(self) then
+        return
+      end
+      ApplyManagedTooltipPosition(self)
+    end)
+  end
+
+  if GameTooltip_SetDefaultAnchor then
+    hooksecurefunc("GameTooltip_SetDefaultAnchor", function(tooltip)
+      if not ShouldManageTooltipPosition(tooltip) then
+        return
+      end
+      ApplyManagedTooltipPosition(tooltip)
+    end)
+  end
+
+  if GameTooltip.SetHyperlink then
+    hooksecurefunc(GameTooltip, "SetHyperlink", function(self)
+      if not ShouldManageTooltipPosition(self) then
+        return
+      end
+      ApplyManagedTooltipPosition(self)
+    end)
+  end
+
+  if GameTooltip.SetBagItem then
+    hooksecurefunc(GameTooltip, "SetBagItem", function(self)
+      if not ShouldManageTooltipPosition(self) then
+        return
+      end
+      ApplyManagedTooltipPosition(self)
+    end)
+  end
+
+  if GameTooltip.SetInventoryItem then
+    hooksecurefunc(GameTooltip, "SetInventoryItem", function(self)
+      if not ShouldManageTooltipPosition(self) then
+        return
+      end
+      ApplyManagedTooltipPosition(self)
+    end)
+  end
+end
+
+function Tea_RefreshDraggableTooltip()
+  if not GameTooltip then
+    return
+  end
+
+  InstallDraggableGameTooltip()
+
+  if not CanDragTooltip() and not previewMode then
+    ClearTooltipClickPassthrough(GameTooltip)
+    GameTooltip:EnableMouse(false)
+    GameTooltip:SetMovable(false)
+    GameTooltip:RegisterForDrag()
+    GameTooltip:SetScript("OnDragStart", nil)
+    GameTooltip:SetScript("OnDragStop", nil)
+    return
+  end
+
+  if previewMode and not CanDragTooltip() then
+    ClearTooltipClickPassthrough(GameTooltip)
+    GameTooltip:EnableMouse(false)
+    GameTooltip:SetMovable(false)
+    GameTooltip:RegisterForDrag()
+    GameTooltip:SetScript("OnDragStart", nil)
+    GameTooltip:SetScript("OnDragStop", nil)
+    return
+  end
+
+  GameTooltip:EnableMouse(true)
+  ApplyTooltipClickPassthrough(GameTooltip)
+  GameTooltip:SetMovable(true)
+  GameTooltip:RegisterForDrag("LeftButton")
+  GameTooltip:SetScript("OnDragStart", function(self)
+    if not CanDragTooltip() then
+      return
+    end
+    if previewMode and not self.teaPreviewActive then
+      return
+    end
+    self:StartMoving()
+  end)
+  GameTooltip:SetScript("OnDragStop", function(self)
+    if not CanDragTooltip() then
+      return
+    end
+    if previewMode and not self.teaPreviewActive then
+      return
+    end
+    self:StopMovingOrSizing()
+    SaveTooltipPosition(self)
+  end)
+end
+
+function Tea_RefreshTooltipPreview()
+  if previewMode then
+    ShowPreviewTooltip()
+  end
+end
+
+function Tea_SetTooltipPreview(active)
+  local wantPreview = active and true or false
+  if previewMode == wantPreview then
+    if wantPreview then
+      Tea_RefreshTooltipPreview()
+    end
+    return
+  end
+
+  previewMode = wantPreview
+
+  if previewMode then
+    ShowPreviewTooltip()
+    Tea_RefreshDraggableTooltip()
+    return
+  end
+
+  HidePreviewTooltip()
+  Tea_RefreshDraggableTooltip()
+end
+
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
 
@@ -141,5 +457,6 @@ frame:SetScript("OnEvent", function(_, event, arg1)
     if ShoppingTooltip2 then
       HookTooltip(ShoppingTooltip2)
     end
+    Tea_RefreshDraggableTooltip()
   end
 end)

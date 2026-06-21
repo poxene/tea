@@ -12,6 +12,8 @@ local defaults = {
     castBars = false,
   },
   tooltip = {
+    draggable = true,
+    locked = false,
     showVendorPrice = true,
     showItemId = true,
     showItemLevel = false,
