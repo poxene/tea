@@ -157,7 +157,95 @@ local function HookTooltip(tooltip)
   tooltip:HookScript("OnTooltipSetItem", SafeAddTooltipLines)
 end
 
+local function GetFrameName(frame)
+  if not frame or not frame.GetName then
+    return nil
+  end
+  return frame:GetName()
+end
+
+local function NameUsesDefaultTooltipPosition(name)
+  if not name then
+    return false
+  end
+
+  if name:match("^TeaBagSlot") or name:match("^TeaBankSlot") then
+    return true
+  end
+
+  if name:match("^TeaEquippedBag") or name:match("^TeaBankBag") then
+    return true
+  end
+
+  if name:match("^Character") and name:match("Slot$") then
+    return true
+  end
+
+  if name:match("^ContainerFrame%d+Item%d+") then
+    return true
+  end
+
+  if name:match("^BankFrameItem%d+") then
+    return true
+  end
+
+  return false
+end
+
+local function FrameUsesDefaultTooltipPosition(owner)
+  if not owner then
+    return false
+  end
+
+  local frame = owner
+  while frame do
+    local name = GetFrameName(frame)
+    if NameUsesDefaultTooltipPosition(name) then
+      return true
+    end
+
+    if name == "PaperDollFrame" or name == "CharacterFrame" then
+      return true
+    end
+
+    if frame.GetParent then
+      frame = frame:GetParent()
+    else
+      break
+    end
+  end
+
+  return false
+end
+
+local function UsesDefaultTooltipPosition(tooltip)
+  if not tooltip or not tooltip.GetOwner then
+    return false
+  end
+
+  return FrameUsesDefaultTooltipPosition(tooltip:GetOwner())
+end
+
+local function HasCustomTooltipAnchor(tooltip)
+  if not tooltip or not Tea_GetDB().tooltip.dragUserPositioned then
+    return false
+  end
+
+  local point, _, relativeTo = tooltip:GetPoint(1)
+  return point ~= nil and relativeTo == UIParent
+end
+
+local function ReleaseCustomTooltipAnchor(tooltip)
+  if HasCustomTooltipAnchor(tooltip) then
+    tooltip:ClearAllPoints()
+  end
+end
+
 local function SaveTooltipPosition(tooltip)
+  if UsesDefaultTooltipPosition(tooltip) then
+    return
+  end
+
   local point, _, relativePoint, x, y = tooltip:GetPoint(1)
   if not point then
     return
@@ -207,7 +295,9 @@ local function ApplyManagedTooltipPosition(tooltip)
   end
 
   if Tea_GetDB().tooltip.dragUserPositioned then
-    ApplySavedTooltipPosition(tooltip)
+    if not UsesDefaultTooltipPosition(tooltip) then
+      ApplySavedTooltipPosition(tooltip)
+    end
   end
 end
 
@@ -215,7 +305,13 @@ local function ShouldManageTooltipPosition(tooltip)
   if previewMode and tooltip and tooltip.teaPreviewActive then
     return true
   end
-  return Tea_GetDB().tooltip.dragUserPositioned == true
+  if Tea_GetDB().tooltip.dragUserPositioned ~= true then
+    return false
+  end
+  if UsesDefaultTooltipPosition(tooltip) then
+    return false
+  end
+  return true
 end
 
 local function ForwardTooltipClickToOwner(tooltip, mouseButton)
@@ -320,47 +416,45 @@ local function InstallDraggableGameTooltip()
   end)
 
   if GameTooltip.SetOwner then
-    hooksecurefunc(GameTooltip, "SetOwner", function(self)
-      if not ShouldManageTooltipPosition(self) then
+    hooksecurefunc(GameTooltip, "SetOwner", function(self, owner)
+      owner = owner or self:GetOwner()
+      if FrameUsesDefaultTooltipPosition(owner) then
+        ReleaseCustomTooltipAnchor(self)
         return
       end
-      ApplyManagedTooltipPosition(self)
+      if ShouldManageTooltipPosition(self) then
+        ApplyManagedTooltipPosition(self)
+      end
     end)
   end
 
   if GameTooltip_SetDefaultAnchor then
     hooksecurefunc("GameTooltip_SetDefaultAnchor", function(tooltip)
-      if not ShouldManageTooltipPosition(tooltip) then
-        return
+      if ShouldManageTooltipPosition(tooltip) then
+        ApplyManagedTooltipPosition(tooltip)
       end
-      ApplyManagedTooltipPosition(tooltip)
     end)
   end
 
   if GameTooltip.SetHyperlink then
     hooksecurefunc(GameTooltip, "SetHyperlink", function(self)
-      if not ShouldManageTooltipPosition(self) then
-        return
+      if ShouldManageTooltipPosition(self) then
+        ApplyManagedTooltipPosition(self)
       end
-      ApplyManagedTooltipPosition(self)
     end)
   end
 
   if GameTooltip.SetBagItem then
     hooksecurefunc(GameTooltip, "SetBagItem", function(self)
-      if not ShouldManageTooltipPosition(self) then
-        return
-      end
-      ApplyManagedTooltipPosition(self)
+      ReleaseCustomTooltipAnchor(self)
     end)
   end
 
   if GameTooltip.SetInventoryItem then
     hooksecurefunc(GameTooltip, "SetInventoryItem", function(self)
-      if not ShouldManageTooltipPosition(self) then
-        return
+      if ShouldManageTooltipPosition(self) then
+        ApplyManagedTooltipPosition(self)
       end
-      ApplyManagedTooltipPosition(self)
     end)
   end
 end
@@ -401,6 +495,9 @@ function Tea_RefreshDraggableTooltip()
       return
     end
     if previewMode and not self.teaPreviewActive then
+      return
+    end
+    if UsesDefaultTooltipPosition(self) then
       return
     end
     self:StartMoving()
