@@ -164,6 +164,39 @@ local function GetFrameName(frame)
   return frame:GetName()
 end
 
+local function IsMinimapRelatedFrame(frame)
+  if not frame then
+    return false
+  end
+
+  if Minimap and frame == Minimap then
+    return true
+  end
+
+  local name = GetFrameName(frame)
+  if not name then
+    return false
+  end
+
+  if name == "MinimapCluster" or name == "MinimapBackdrop" then
+    return true
+  end
+
+  if name:match("^MiniMap") then
+    return true
+  end
+
+  if name == "GameTimeFrame" or name == "TimeManagerClockButton" then
+    return true
+  end
+
+  if name == "MinimapZoneTextButton" or name == "MinimapToggleButton" then
+    return true
+  end
+
+  return false
+end
+
 local function NameUsesDefaultTooltipPosition(name)
   if not name then
     return false
@@ -199,6 +232,10 @@ local function FrameUsesDefaultTooltipPosition(owner)
 
   local frame = owner
   while frame do
+    if IsMinimapRelatedFrame(frame) then
+      return true
+    end
+
     local name = GetFrameName(frame)
     if NameUsesDefaultTooltipPosition(name) then
       return true

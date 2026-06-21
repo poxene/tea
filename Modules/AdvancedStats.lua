@@ -16,12 +16,12 @@ local TOGGLE_Y_OFFSET = 20
 local TOGGLE_OVERLAP_RATIO = 0.4
 
 local RESISTANCE_SCHOOLS = {
-  { index = 1, fallback = "Holy" },
-  { index = 2, fallback = "Fire" },
-  { index = 3, fallback = "Nature" },
-  { index = 4, fallback = "Frost" },
-  { index = 5, fallback = "Shadow" },
-  { index = 6, fallback = "Arcane" },
+  { index = 1, label = "Holy" },
+  { index = 2, label = "Fire" },
+  { index = 3, label = "Nature" },
+  { index = 4, label = "Frost" },
+  { index = 5, label = "Shadow" },
+  { index = 6, label = "Arcane" },
 }
 
 local RATING_ENTRIES = {
@@ -206,14 +206,22 @@ local function GetSpellCrit()
   return best
 end
 
-local function GetResistanceLabel(index, fallback)
-  local cap = _G["SPELL_SCHOOL" .. (index + 1) .. "_CAP"]
-  return SafeLabel(cap, fallback)
-end
-
 local function GetTotalResistance(unit, index)
-  local _, total = SafeCall(UnitResistance, unit, index)
-  return AsNumber(total)
+  if type(UnitResistance) ~= "function" then
+    return nil
+  end
+
+  local ok, base, total = pcall(UnitResistance, unit, index)
+  if not ok then
+    return nil
+  end
+
+  total = AsNumber(total)
+  if total and total > 0 then
+    return total
+  end
+
+  return AsNumber(base)
 end
 
 local function GetNotCastingManaRegen()
@@ -292,7 +300,7 @@ local function BuildStatLines()
       AddLine(lines, SafeLabel(SPELL_BONUS_HEALING, "Bonus Healing"), "+" .. Round(spellHealing))
     end
     if spellCrit then
-      AddLine(lines, "Spell Crit", FormatPercent(spellCrit))
+      AddLine(lines, "Critical Strike Chance", FormatPercent(spellCrit))
     end
     if manaRegen and manaRegen > 0 then
       AddLine(lines, SafeLabel(MANA_REGEN, "Mana Regeneration"), string.format("%d / 5 sec", Round(manaRegen)))
@@ -355,7 +363,7 @@ local function BuildStatLines()
     if amount and amount > 0 then
       hasResistances = true
       resistanceLines[#resistanceLines + 1] = {
-        label = GetResistanceLabel(school.index, school.fallback),
+        label = school.label,
         value = tostring(Round(amount)),
       }
     end
