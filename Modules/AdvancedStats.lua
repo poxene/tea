@@ -4,9 +4,10 @@ local PANE_WIDTH = 248
 local PANE_HEIGHT = 426
 local PANE_X = -32
 local PANE_Y = -13
-local ROW_HEIGHT = 13
-local SECTION_GAP = 10
-local PADDING = 10
+local ROW_HEIGHT = 14
+local SECTION_GAP = 8
+local PADDING = 14
+local VALUE_COLUMN = -10
 local REFRESH_INTERVAL = 0.25
 local TOGGLE_WIDTH = 24
 local TOGGLE_HEIGHT = 22
@@ -14,9 +15,28 @@ local TOGGLE_TAB_GAP = 2
 local TOGGLE_X_OFFSET = 55
 local TOGGLE_Y_OFFSET = 20
 local TOGGLE_OVERLAP_RATIO = 0.4
-local COLLECT_BATCH_SIZE = 12
 
-local PRIMARY_STAT_LABELS = {
+local RESISTANCE_SCHOOLS = {
+  { index = 2, label = "Holy" },
+  { index = 3, label = "Fire" },
+  { index = 4, label = "Nature" },
+  { index = 5, label = "Frost" },
+  { index = 6, label = "Shadow" },
+  { index = 7, label = "Arcane" },
+}
+
+local RATING_ENTRIES = {
+  { id = 6, label = "Hit" },
+  { id = 8, label = "Spell Hit" },
+  { id = 9, label = "Crit" },
+  { id = 10, label = "Ranged Crit" },
+  { id = 11, label = "Spell Crit" },
+  { id = 3, label = "Dodge Rating" },
+  { id = 4, label = "Parry Rating" },
+  { id = 5, label = "Block Rating" },
+}
+
+local STAT_NAME_FALLBACKS = {
   "Strength",
   "Agility",
   "Stamina",
@@ -24,465 +44,305 @@ local PRIMARY_STAT_LABELS = {
   "Spirit",
 }
 
-local RESISTANCE_LABELS = {
-  [0] = "Physical (0)",
-  [1] = "Physical (1)",
-  [2] = "Holy",
-  [3] = "Fire",
-  [4] = "Nature",
-  [5] = "Frost",
-  [6] = "Shadow",
-  [7] = "Arcane",
-}
-
-local SPELL_SCHOOL_LABELS = {
-  [2] = "Holy",
-  [3] = "Fire",
-  [4] = "Nature",
-  [5] = "Frost",
-  [6] = "Shadow",
-  [7] = "Arcane",
-}
-
-local COMBAT_RATING_IDS = {
-  1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
-}
-
-local COMBAT_RATING_FALLBACK_NAMES = {
-  [1] = "CR_WEAPON_SKILL",
-  [2] = "CR_DEFENSE_SKILL",
-  [3] = "CR_DODGE",
-  [4] = "CR_PARRY",
-  [5] = "CR_BLOCK",
-  [6] = "CR_HIT_MELEE",
-  [7] = "CR_HIT_RANGED",
-  [8] = "CR_HIT_SPELL",
-  [9] = "CR_CRIT_MELEE",
-  [10] = "CR_CRIT_RANGED",
-  [11] = "CR_CRIT_SPELL",
-  [12] = "CR_HIT_TAKEN_MELEE",
-  [13] = "CR_HIT_TAKEN_RANGED",
-  [14] = "CR_HIT_TAKEN_SPELL",
-  [15] = "CR_CRIT_TAKEN_MELEE",
-  [16] = "CR_CRIT_TAKEN_RANGED",
-  [17] = "CR_CRIT_TAKEN_SPELL",
-  [18] = "CR_HASTE_MELEE",
-  [19] = "CR_HASTE_RANGED",
-  [20] = "CR_HASTE_SPELL",
-  [21] = "CR_WEAPON_SKILL_MAINHAND",
-  [22] = "CR_WEAPON_SKILL_OFFHAND",
-  [23] = "CR_WEAPON_SKILL_RANGED",
-  [24] = "CR_EXPERTISE",
-  [25] = "CR_ARMOR_PENETRATION",
-}
-
 local toggleButton
 local pane
 local scrollFrame
 local scrollChild
-local collectFrame
 local statusLine
 local linePool = {}
 local uiReady = false
 local lastRefresh = 0
 local cachedLines
 local cacheDirty = true
-local collectSteps
-local collectStepIndex = 0
-local pendingLines
-local combatRatingLabels
 
 local function IsEnabled()
   return Tea_GetDB().modules.advancedStats == true
 end
 
-local function FormatValue(value)
-  if value == nil then
-    return "nil"
+local function SafeLabel(value, fallback)
+  if type(value) == "string" and value ~= "" then
+    return value
   end
-  if type(value) == "number" then
-    if value ~= value then
-      return "nan"
-    end
-    if math.abs(value - math.floor(value + 0.00001)) < 0.001 then
-      return tostring(math.floor(value + 0.00001))
-    end
-    return string.format("%.2f", value)
-  end
-  if type(value) == "boolean" then
-    return value and "true" or "false"
-  end
-  return tostring(value)
+  return fallback
 end
 
-local function FormatReturns(...)
-  local count = select("#", ...)
-  if count == 0 then
-    return "()"
-  end
-  local parts = {}
-  for i = 1, count do
-    parts[i] = FormatValue(select(i, ...))
-  end
-  return table.concat(parts, ", ")
-end
-
-local function SafeCall(label, fn)
+local function SafeCall(fn, ...)
   if type(fn) ~= "function" then
-    return label, "(unavailable)"
+    return nil
   end
-
-  local results = { pcall(fn) }
+  local results = { pcall(fn, ...) }
   if not results[1] then
-    return label, "(error: " .. tostring(results[2]) .. ")"
+    return nil
+  end
+  table.remove(results, 1)
+  return unpack(results)
+end
+
+local function AsNumber(value)
+  return tonumber(value)
+end
+
+local function Round(value)
+  local number = AsNumber(value)
+  if number == nil then
+    return 0
+  end
+  return math.floor(number + 0.5)
+end
+
+local function FormatPercent(value)
+  local number = AsNumber(value)
+  if number == nil then
+    return nil
+  end
+  return string.format("%.2f%%", number)
+end
+
+local function FormatRange(minValue, maxValue)
+  local minNumber = AsNumber(minValue)
+  local maxNumber = AsNumber(maxValue)
+  if minNumber == nil or maxNumber == nil then
+    return nil
+  end
+  return string.format("%d - %d", Round(minNumber), Round(maxNumber))
+end
+
+local function FormatSpeed(speed)
+  local number = AsNumber(speed)
+  if number == nil or number <= 0 then
+    return nil
+  end
+  return string.format("%.2f", number)
+end
+
+local function FormatPrimaryStat(index)
+  local _, effective, posBuff, negBuff = SafeCall(UnitStat, "player", index)
+  effective = AsNumber(effective)
+  if effective == nil then
+    return nil
   end
 
-  table.remove(results, 1)
-  if #results == 0 then
-    return label, "()"
+  posBuff = AsNumber(posBuff) or 0
+  negBuff = AsNumber(negBuff) or 0
+
+  if posBuff ~= 0 or negBuff ~= 0 then
+    local detail = tostring(Round(effective))
+    if posBuff > 0 then
+      detail = detail .. " |cff00ff00+" .. Round(posBuff) .. "|r"
+    end
+    if negBuff > 0 then
+      detail = detail .. " |cffff2020-" .. Round(negBuff) .. "|r"
+    end
+    return detail
   end
-  if #results == 1 then
-    return label, FormatValue(results[1])
-  end
-  return label, FormatReturns(unpack(results))
+
+  return tostring(Round(effective))
+end
+
+local function GetStatLabel(index)
+  local globals = { STAT_STRENGTH, STAT_AGILITY, STAT_STAMINA, STAT_INTELLECT, STAT_SPIRIT }
+  return SafeLabel(globals[index], STAT_NAME_FALLBACKS[index] or "Stat")
 end
 
 local function AddLine(lines, label, value)
-  lines[#lines + 1] = { kind = "line", label = label, value = value }
+  if value == nil or value == "" then
+    return
+  end
+  if type(value) == "number" then
+    value = tostring(value)
+  elseif type(value) ~= "string" then
+    return
+  end
+  lines[#lines + 1] = { kind = "line", label = SafeLabel(label, "Stat"), value = value }
 end
 
 local function AddSection(lines, title)
-  lines[#lines + 1] = { kind = "section", title = title }
+  lines[#lines + 1] = { kind = "section", title = SafeLabel(title, "Stats") }
 end
 
-local function GetCombatRatingLabel(id)
-  if not combatRatingLabels then
-    combatRatingLabels = {}
-    for name, value in pairs(_G) do
-      if type(name) == "string" and type(value) == "number" and name:match("^CR_") then
-        combatRatingLabels[value] = name
-      end
-    end
-    for ratingID, name in pairs(COMBAT_RATING_FALLBACK_NAMES) do
-      combatRatingLabels[ratingID] = combatRatingLabels[ratingID] or name
+local function HasRangedStats()
+  local ap = AsNumber(SafeCall(UnitRangedAttackPower, "player"))
+  return ap and ap > 0
+end
+
+local function GetSpellDamage()
+  local best = 0
+  for school = 2, 7 do
+    local bonus = AsNumber(SafeCall(GetSpellBonusDamage, school)) or 0
+    if bonus > best then
+      best = bonus
     end
   end
-
-  return combatRatingLabels[id] or ("CR_" .. id)
+  if best <= 0 then
+    return nil
+  end
+  return best
 end
 
-local function BuildCollectSteps()
-  local steps = {}
+local function GetSpellCrit()
+  local best = 0
+  for school = 2, 7 do
+    local crit = AsNumber(SafeCall(GetSpellCritChance, school)) or 0
+    if crit > best then
+      best = crit
+    end
+  end
+  if best <= 0 then
+    return nil
+  end
+  return best
+end
+
+local function GetNotCastingManaRegen()
+  if type(GetManaRegen) ~= "function" then
+    return nil
+  end
+
+  local casting, notCasting = SafeCall(GetManaRegen)
+  return AsNumber(notCasting) or AsNumber(casting)
+end
+
+local function FormatRatingLine(label, id)
+  if type(GetCombatRating) ~= "function" then
+    return nil
+  end
+
+  local bonus = AsNumber(SafeCall(GetCombatRatingBonus, id))
+  local rating = AsNumber(SafeCall(GetCombatRating, id))
+  if (not bonus or bonus == 0) and (not rating or rating == 0) then
+    return nil
+  end
+
+  if bonus and bonus ~= 0 then
+    local percentText = FormatPercent(bonus)
+    if not percentText then
+      return nil
+    end
+    if rating and rating > 0 then
+      return percentText .. " (" .. Round(rating) .. ")"
+    end
+    return percentText
+  end
+
+  if rating and rating > 0 then
+    return tostring(Round(rating))
+  end
+
+  return nil
+end
+
+local function BuildStatLines()
+  local lines = {}
   local unit = "player"
 
-  local function step(fn)
-    steps[#steps + 1] = fn
+  AddSection(lines, SafeLabel(ATTRIBUTES_LABEL, "Attributes"))
+  for index = 1, 5 do
+    AddLine(lines, GetStatLabel(index), FormatPrimaryStat(index))
   end
 
-  step(function(lines)
-    AddSection(lines, "Unit")
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("UnitLevel", function()
-      return UnitLevel(unit)
-    end))
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("UnitHealth / Max", function()
-      return UnitHealth(unit), UnitHealthMax(unit)
-    end))
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("UnitPowerType", function()
-      return UnitPowerType(unit)
-    end))
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("UnitPower / Max", function()
-      return UnitPower(unit), UnitPowerMax(unit)
-    end))
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("UnitClass", function()
-      local _, className, classID = UnitClass(unit)
-      return className, classID
-    end))
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("UnitRace", function()
-      local _, raceName, raceID = UnitRace(unit)
-      return raceName, raceID
-    end))
-  end)
+  AddSection(lines, SafeLabel(MELEE, "Melee"))
+  local minDamage, maxDamage = SafeCall(UnitDamage, unit)
+  AddLine(lines, SafeLabel(DAMAGE, "Damage"), FormatRange(minDamage, maxDamage))
+  AddLine(lines, SafeLabel(ATTACK_POWER, "Attack Power"), Round(SafeCall(UnitAttackPower, unit)))
+  AddLine(lines, SafeLabel(ATTACK_SPEED, "Speed"), FormatSpeed(SafeCall(UnitAttackSpeed, unit)))
+  AddLine(lines, SafeLabel(ITEM_MOD_CRIT_RATING, "Critical Strike"), FormatPercent(SafeCall(GetCritChance)))
 
-  step(function(lines)
-    AddSection(lines, "Primary stats (UnitStat)")
-  end)
-  for index, label in ipairs(PRIMARY_STAT_LABELS) do
-    step(function(lines)
-      AddLine(lines, SafeCall(label, function()
-        return UnitStat(unit, index)
-      end))
-    end)
+  if HasRangedStats() then
+    AddSection(lines, SafeLabel(RANGED, "Ranged"))
+    local rangedMin, rangedMax = SafeCall(UnitRangedDamage, unit)
+    AddLine(lines, SafeLabel(DAMAGE, "Damage"), FormatRange(rangedMin, rangedMax))
+    AddLine(lines, SafeLabel(ATTACK_POWER, "Attack Power"), Round(SafeCall(UnitRangedAttackPower, unit)))
+    AddLine(lines, SafeLabel(ATTACK_SPEED, "Speed"), FormatSpeed(SafeCall(UnitRangedAttackSpeed, unit)))
+    AddLine(lines, SafeLabel(ITEM_MOD_CRIT_RATING, "Critical Strike"), FormatPercent(SafeCall(GetRangedCritChance)))
   end
 
-  step(function(lines)
-    AddSection(lines, "Armor")
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("UnitArmor", function()
-      return UnitArmor(unit)
-    end))
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("PaperDollFrame_GetArmorReduction", function()
-      if not PaperDollFrame_GetArmorReduction then
-        return nil
-      end
-      local _, effective = UnitArmor(unit)
-      return PaperDollFrame_GetArmorReduction(effective, UnitLevel(unit))
-    end))
-  end)
-
-  step(function(lines)
-    AddSection(lines, "Attack")
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("UnitAttackBothHands", function()
-      return UnitAttackBothHands(unit)
-    end))
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("UnitAttackPower", function()
-      return UnitAttackPower(unit)
-    end))
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("UnitRangedAttackPower", function()
-      return UnitRangedAttackPower(unit)
-    end))
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("UnitDamage", function()
-      return UnitDamage(unit)
-    end))
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("UnitRangedDamage", function()
-      return UnitRangedDamage(unit)
-    end))
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("UnitAttackSpeed", function()
-      return UnitAttackSpeed(unit)
-    end))
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("UnitRangedAttackSpeed", function()
-      return UnitRangedAttackSpeed(unit)
-    end))
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("GetExpertise", function()
-      if not GetExpertise then
-        return nil
-      end
-      return GetExpertise()
-    end))
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("GetExpertisePercent", function()
-      if not GetExpertisePercent then
-        return nil
-      end
-      return GetExpertisePercent()
-    end))
-  end)
-
-  step(function(lines)
-    AddSection(lines, "Crit")
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("GetCritChance", function()
-      return GetCritChance()
-    end))
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("GetRangedCritChance", function()
-      return GetRangedCritChance()
-    end))
-  end)
-  for school = 1, 7 do
-    local schoolLabel = SPELL_SCHOOL_LABELS[school] or ("School " .. school)
-    step(function(lines)
-      AddLine(lines, SafeCall("GetSpellCritChance " .. schoolLabel, function()
-        return GetSpellCritChance(school)
-      end))
-    end)
+  local spellDamage = GetSpellDamage()
+  local spellHealing = AsNumber(SafeCall(GetSpellBonusHealing)) or 0
+  local spellCrit = GetSpellCrit()
+  local manaRegen = GetNotCastingManaRegen()
+  if spellDamage or spellHealing > 0 or spellCrit or (manaRegen and manaRegen > 0) then
+    AddSection(lines, SafeLabel(SPELLS, "Spell"))
+    if spellDamage then
+      AddLine(lines, SafeLabel(SPELL_BONUS_DAMAGE, "Bonus Damage"), "+" .. Round(spellDamage))
+    end
+    if spellHealing > 0 then
+      AddLine(lines, SafeLabel(SPELL_BONUS_HEALING, "Bonus Healing"), "+" .. Round(spellHealing))
+    end
+    if spellCrit then
+      AddLine(lines, SafeLabel(ITEM_MOD_CRIT_RATING, "Critical Strike"), FormatPercent(spellCrit))
+    end
+    if manaRegen and manaRegen > 0 then
+      AddLine(lines, SafeLabel(MANA_REGEN, "Mana Regeneration"), string.format("%d / 5 sec", Round(manaRegen)))
+    end
   end
 
-  step(function(lines)
-    AddSection(lines, "Avoidance")
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("UnitDefense", function()
-      return UnitDefense(unit)
-    end))
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("GetDodgeChance", function()
-      return GetDodgeChance()
-    end))
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("GetParryChance", function()
-      return GetParryChance()
-    end))
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("GetBlockChance", function()
-      return GetBlockChance()
-    end))
-  end)
-
-  step(function(lines)
-    AddSection(lines, "Combat ratings")
-  end)
-  for _, id in ipairs(COMBAT_RATING_IDS) do
-    local label = GetCombatRatingLabel(id)
-    step(function(lines)
-      AddLine(lines, SafeCall(label .. " rating", function()
-        if not GetCombatRating then
-          return nil
-        end
-        return GetCombatRating(id)
-      end))
-    end)
-    step(function(lines)
-      AddLine(lines, SafeCall(label .. " bonus %", function()
-        if not GetCombatRatingBonus then
-          return nil
-        end
-        return GetCombatRatingBonus(id)
-      end))
-    end)
+  AddSection(lines, SafeLabel(DEFENSE, "Defense"))
+  local _, effectiveArmor = SafeCall(UnitArmor, unit)
+  effectiveArmor = AsNumber(effectiveArmor)
+  AddLine(lines, SafeLabel(ARMOR, "Armor"), Round(effectiveArmor))
+  if type(PaperDollFrame_GetArmorReduction) == "function" and effectiveArmor then
+    local reduction = AsNumber(SafeCall(PaperDollFrame_GetArmorReduction, effectiveArmor, UnitLevel(unit)))
+    if reduction then
+      AddLine(lines, SafeLabel(DAMAGE_REDUCTION, "Damage Reduction"), FormatPercent(reduction))
+    end
   end
 
-  step(function(lines)
-    AddSection(lines, "Resistances (UnitResistance)")
-  end)
-  for index = 0, 7 do
-    local label = RESISTANCE_LABELS[index] or ("School " .. index)
-    step(function(lines)
-      AddLine(lines, SafeCall(label, function()
-        return UnitResistance(unit, index)
-      end))
-    end)
+  local baseDefense, armorDefense = SafeCall(UnitDefense, unit)
+  baseDefense = AsNumber(baseDefense)
+  armorDefense = AsNumber(armorDefense) or 0
+  if baseDefense then
+    local defenseValue = Round(baseDefense + armorDefense)
+    if defenseValue > 0 then
+      AddLine(lines, "Defense Skill", defenseValue)
+    end
   end
 
-  step(function(lines)
-    AddSection(lines, "Spell power")
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("GetSpellBonusHealing", function()
-      return GetSpellBonusHealing()
-    end))
-  end)
-  for school = 2, 7 do
-    local schoolLabel = SPELL_SCHOOL_LABELS[school] or ("School " .. school)
-    step(function(lines)
-      AddLine(lines, SafeCall("GetSpellBonusDamage " .. schoolLabel, function()
-        return GetSpellBonusDamage(school)
-      end))
-    end)
+  AddLine(lines, SafeLabel(STAT_DODGE, "Dodge"), FormatPercent(SafeCall(GetDodgeChance)))
+  AddLine(lines, SafeLabel(STAT_PARRY, "Parry"), FormatPercent(SafeCall(GetParryChance)))
+  AddLine(lines, SafeLabel(STAT_BLOCK, "Block"), FormatPercent(SafeCall(GetBlockChance)))
+
+  local blockValue = AsNumber(SafeCall(GetShieldBlock))
+  if blockValue and blockValue > 0 then
+    AddLine(lines, SafeLabel(BLOCK_VALUE, "Block Value"), Round(blockValue))
   end
 
-  step(function(lines)
-    AddSection(lines, "Mana regen")
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("GetManaRegen (casting)", function()
-      return GetManaRegen()
-    end))
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("GetManaRegen (not casting)", function()
-      return GetManaRegen(1)
-    end))
-  end)
-
-  step(function(lines)
-    AddSection(lines, "Alternate power types")
-  end)
-  for powerType = 0, 10 do
-    step(function(lines)
-      AddLine(lines, SafeCall("UnitPower type " .. powerType, function()
-        return UnitPower(unit, powerType), UnitPowerMax(unit, powerType)
-      end))
-    end)
+  local hasRatings = false
+  local ratingLines = {}
+  if type(GetCombatRating) == "function" then
+    for _, entry in ipairs(RATING_ENTRIES) do
+      local value = FormatRatingLine(entry.label, entry.id)
+      if value then
+        hasRatings = true
+        ratingLines[#ratingLines + 1] = { label = entry.label, value = value }
+      end
+    end
   end
 
-  step(function(lines)
-    AddSection(lines, "Inventory durability")
-  end)
-  for slot = 1, 19 do
-    step(function(lines)
-      AddLine(lines, SafeCall("Slot " .. slot, function()
-        return GetInventoryItemDurability(slot)
-      end))
-    end)
+  if hasRatings then
+    AddSection(lines, SafeLabel(COMBAT_RATING, "Combat Ratings"))
+    for _, row in ipairs(ratingLines) do
+      AddLine(lines, row.label, row.value)
+    end
   end
 
-  step(function(lines)
-    AddSection(lines, "Misc probes")
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("GetHitModifier", function()
-      if not GetHitModifier then
-        return nil
-      end
-      return GetHitModifier()
-    end))
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("GetRangedHitModifier", function()
-      if not GetRangedHitModifier then
-        return nil
-      end
-      return GetRangedHitModifier()
-    end))
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("GetSpellHitModifier", function()
-      if not GetSpellHitModifier then
-        return nil
-      end
-      return GetSpellHitModifier()
-    end))
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("GetCombatRating(CR_HIT_MELEE)", function()
-      if not GetCombatRating or not CR_HIT_MELEE then
-        return nil
-      end
-      return GetCombatRating(CR_HIT_MELEE)
-    end))
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("GetShieldBlock", function()
-      if not GetShieldBlock then
-        return nil
-      end
-      return GetShieldBlock()
-    end))
-  end)
-  step(function(lines)
-    AddLine(lines, SafeCall("GetMoney", function()
-      return GetMoney()
-    end))
-  end)
+  local hasResistances = false
+  local resistanceLines = {}
+  for _, school in ipairs(RESISTANCE_SCHOOLS) do
+    local amount = AsNumber(SafeCall(UnitResistance, unit, school.index))
+    if amount and amount > 0 then
+      hasResistances = true
+      resistanceLines[#resistanceLines + 1] = { label = school.label, value = tostring(Round(amount)) }
+    end
+  end
 
-  return steps
+  if hasResistances then
+    AddSection(lines, SafeLabel(RESISTANCE, "Resistances"))
+    for _, row in ipairs(resistanceLines) do
+      AddLine(lines, row.label, row.value)
+    end
+  end
+
+  return lines
 end
 
 local function InvalidateCache()
@@ -493,8 +353,6 @@ local function AcquireLine(index)
   local line = linePool[index]
   if not line then
     line = scrollChild:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    line:SetPoint("TOPLEFT", PADDING, -PADDING - (index - 1) * ROW_HEIGHT)
-    line:SetPoint("RIGHT", scrollChild, "RIGHT", -PADDING, 0)
     line:SetJustifyH("LEFT")
     linePool[index] = line
   end
@@ -525,23 +383,33 @@ local function RenderLines(lines)
     local fs = AcquireLine(lineIndex)
     fs:ClearAllPoints()
     fs:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", PADDING, -y)
+    fs:SetPoint("TOPRIGHT", scrollChild, "TOPRIGHT", VALUE_COLUMN, -y)
 
     if entry.kind == "section" then
       if lineIndex > 1 then
         y = y + SECTION_GAP
       end
-      fs:SetTextColor(0.75, 0.82, 1)
-      fs:SetText(entry.title)
+      fs:SetJustifyH("LEFT")
+      fs:SetTextColor(1, 0.82, 0)
+      fs:SetText(tostring(entry.title or ""))
       y = y + ROW_HEIGHT + 2
     else
-      fs:SetTextColor(0.85, 0.85, 0.85)
-      fs:SetText(string.format("%s: |cffcccccc%s|r", entry.label, entry.value))
+      fs:SetJustifyH("LEFT")
+      fs:SetText(tostring(entry.label or ""))
+      lineIndex = lineIndex + 1
+      local valueFs = AcquireLine(lineIndex)
+      valueFs:ClearAllPoints()
+      valueFs:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", PADDING, -y)
+      valueFs:SetPoint("TOPRIGHT", scrollChild, "TOPRIGHT", VALUE_COLUMN, -y)
+      valueFs:SetJustifyH("RIGHT")
+      valueFs:SetTextColor(1, 1, 1)
+      valueFs:SetText(entry.value)
       y = y + ROW_HEIGHT
     end
   end
 
   HideUnusedLines(lineIndex + 1)
-  scrollChild:SetWidth(PANE_WIDTH - 28)
+  scrollChild:SetWidth(PANE_WIDTH - 36)
   scrollChild:SetHeight(math.max(y + PADDING, pane and pane:GetHeight() or 400))
 end
 
@@ -552,77 +420,30 @@ local function ShowLoadingState()
 
   HideUnusedLines(2)
   if not statusLine then
-    statusLine = scrollChild:CreateFontString(nil, "ARTWORK", "GameFontHighlightSmall")
-    statusLine:SetPoint("TOPLEFT", scrollChild, "TOPLEFT", PADDING, -PADDING)
-    statusLine:SetPoint("RIGHT", scrollChild, "RIGHT", -PADDING, 0)
-    statusLine:SetJustifyH("LEFT")
+    statusLine = scrollChild:CreateFontString(nil, "ARTWORK", "GameFontDisableSmall")
+    statusLine:SetPoint("TOP", scrollChild, "TOP", 0, -PADDING - 8)
+    statusLine:SetJustifyH("CENTER")
   end
-  statusLine:SetTextColor(0.7, 0.7, 0.7)
-  statusLine:SetText("Loading stats...")
+  statusLine:SetTextColor(0.65, 0.65, 0.65)
+  statusLine:SetText("Loading...")
   statusLine:Show()
   scrollChild:SetHeight(pane and pane:GetHeight() or 400)
 end
 
-local function FinishCollect()
-  cachedLines = pendingLines
-  pendingLines = nil
-  collectSteps = nil
-  collectStepIndex = 0
-  cacheDirty = false
-  lastRefresh = GetTime()
-  collectFrame:Hide()
-
-  if pane and pane:IsShown() then
-    RenderLines(cachedLines)
+local function CollectStatLines()
+  local ok, lines = pcall(BuildStatLines)
+  if ok and type(lines) == "table" then
+    return lines
   end
+
+  if not ok and Tea_Print then
+    Tea_Print("Advanced stats error: " .. tostring(lines))
+  end
+
+  return nil
 end
 
-local function ProcessCollectBatch()
-  if not collectSteps or not pendingLines then
-    collectFrame:Hide()
-    return
-  end
-
-  local endIndex = math.min(collectStepIndex + COLLECT_BATCH_SIZE, #collectSteps)
-
-  for index = collectStepIndex + 1, endIndex do
-    collectSteps[index](pendingLines)
-  end
-
-  collectStepIndex = endIndex
-
-  if collectStepIndex >= #collectSteps then
-    FinishCollect()
-  end
-end
-
-local function StartCollect(force)
-  if collectFrame and collectFrame:IsShown() and not force then
-    return
-  end
-
-  if not force and not cacheDirty and cachedLines then
-    return
-  end
-
-  if not collectSteps then
-    collectSteps = BuildCollectSteps()
-  end
-
-  pendingLines = {}
-  collectStepIndex = 0
-  collectFrame:Show()
-  ProcessCollectBatch()
-end
-
-local function PrefetchStats()
-  if not IsEnabled() then
-    return
-  end
-  StartCollect(false)
-end
-
-local function RefreshPane(force)
+local function RefreshStats(force)
   if not pane or not pane:IsShown() or not IsEnabled() then
     return
   end
@@ -638,13 +459,38 @@ local function RefreshPane(force)
     return
   end
 
-  if pendingLines and collectFrame and collectFrame:IsShown() then
-    RenderLines(pendingLines)
+  local lines = CollectStatLines()
+  if not lines then
+    if statusLine then
+      statusLine:Show()
+      statusLine:SetText("Unable to load stats.")
+    else
+      ShowLoadingState()
+      if statusLine then
+        statusLine:SetText("Unable to load stats.")
+      end
+    end
     return
   end
 
-  ShowLoadingState()
-  StartCollect(true)
+  cachedLines = lines
+  cacheDirty = false
+  lastRefresh = now
+  RenderLines(cachedLines)
+end
+
+local function PrefetchStats()
+  if not IsEnabled() then
+    return
+  end
+  if cacheDirty or not cachedLines then
+    local lines = CollectStatLines()
+    if lines then
+      cachedLines = lines
+      cacheDirty = false
+      lastRefresh = GetTime()
+    end
+  end
 end
 
 local function GetTabLabel(tab)
@@ -747,12 +593,7 @@ local function SetPaneOpen(open)
     UpdateLayout()
     toggleButton:SetText("<")
     UpdateTogglePosition()
-    if cachedLines and not cacheDirty then
-      RenderLines(cachedLines)
-    else
-      ShowLoadingState()
-      StartCollect(true)
-    end
+    RefreshStats(false)
   else
     pane:Hide()
     toggleButton:SetText(">")
@@ -786,6 +627,22 @@ local function SyncVisibility()
   end
 end
 
+local function ApplyPaneBackdrop(frame)
+  if not frame.SetBackdrop then
+    return
+  end
+
+  frame:SetBackdrop({
+    bgFile = "Interface\\DialogFrame\\UI-DialogBox-Background",
+    edgeFile = "Interface\\DialogFrame\\UI-DialogBox-Border",
+    tile = true,
+    tileSize = 32,
+    edgeSize = 32,
+    insets = { left = 11, right = 12, top = 12, bottom = 11 },
+  })
+  frame:SetBackdropColor(0, 0, 0, 1)
+end
+
 local function CreateUI()
   if uiReady or not CharacterFrame then
     return
@@ -800,12 +657,6 @@ local function CreateUI()
   toggleButton:SetText(">")
   toggleButton:SetScript("OnClick", TogglePane)
 
-  collectFrame = CreateFrame("Frame")
-  collectFrame:Hide()
-  collectFrame:SetScript("OnUpdate", function()
-    ProcessCollectBatch()
-  end)
-
   pane = CreateFrame("Frame", "TeaAdvancedStatsPane", UIParent, backdropTemplate)
   pane:SetSize(PANE_WIDTH, GetPaneHeight())
   pane:SetPoint("TOPLEFT", CharacterFrame, "TOPRIGHT", PANE_X, PANE_Y)
@@ -814,30 +665,33 @@ local function CreateUI()
   pane:EnableMouse(true)
   pane:Hide()
 
-  if pane.SetBackdrop then
-    pane:SetBackdrop({
-      bgFile = "Interface\\Buttons\\WHITE8x8",
-      edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-      tile = true,
-      tileSize = 8,
-      edgeSize = 12,
-      insets = { left = 2, right = 2, top = 2, bottom = 2 },
-    })
-    pane:SetBackdropColor(0.06, 0.06, 0.07, 0.96)
-    pane:SetBackdropBorderColor(0.35, 0.35, 0.38, 1)
-  end
+  ApplyPaneBackdrop(pane)
 
   local title = pane:CreateFontString(nil, "ARTWORK", "GameFontNormal")
-  title:SetPoint("TOPLEFT", 12, -10)
+  title:SetPoint("TOP", pane, "TOP", 0, -16)
   title:SetText("Advanced Stats")
-  title:SetTextColor(0.9, 0.9, 0.9)
+  title:SetTextColor(1, 0.82, 0)
+
+  local titleLeft = pane:CreateTexture(nil, "ARTWORK")
+  titleLeft:SetTexture("Interface\\PaperDollInfoFrame\\UI-Character-Info-Title")
+  titleLeft:SetTexCoord(0.2, 0.8, 0, 1)
+  titleLeft:SetPoint("TOPLEFT", 16, -28)
+  titleLeft:SetPoint("TOPRIGHT", pane, "TOP", -8, -28)
+  titleLeft:SetHeight(12)
+
+  local titleRight = pane:CreateTexture(nil, "ARTWORK")
+  titleRight:SetTexture("Interface\\PaperDollInfoFrame\\UI-Character-Info-Title")
+  titleRight:SetTexCoord(0.2, 0.8, 0, 1)
+  titleRight:SetPoint("TOPLEFT", pane, "TOP", 8, -28)
+  titleRight:SetPoint("TOPRIGHT", -16, -28)
+  titleRight:SetHeight(12)
 
   scrollFrame = CreateFrame("ScrollFrame", "TeaAdvancedStatsScroll", pane, "UIPanelScrollFrameTemplate")
-  scrollFrame:SetPoint("TOPLEFT", 4, -28)
-  scrollFrame:SetPoint("BOTTOMRIGHT", -26, 8)
+  scrollFrame:SetPoint("TOPLEFT", 12, -42)
+  scrollFrame:SetPoint("BOTTOMRIGHT", -28, 14)
 
   scrollChild = CreateFrame("Frame", nil, scrollFrame)
-  scrollChild:SetWidth(PANE_WIDTH - 28)
+  scrollChild:SetWidth(PANE_WIDTH - 36)
   scrollChild:SetHeight(400)
   scrollFrame:SetScrollChild(scrollChild)
 
@@ -852,9 +706,6 @@ local function CreateUI()
   CharacterFrame:HookScript("OnHide", function()
     pane:Hide()
     toggleButton:Hide()
-    if collectFrame then
-      collectFrame:Hide()
-    end
   end)
 
   UpdateLayout()
@@ -884,7 +735,7 @@ function Tea_RefreshAdvancedStats()
   TryCreateUI()
   InvalidateCache()
   SyncVisibility()
-  RefreshPane(true)
+  RefreshStats(true)
 end
 
 local eventFrame = CreateFrame("Frame")
@@ -912,5 +763,5 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
   end
 
   InvalidateCache()
-  RefreshPane(false)
+  RefreshStats(false)
 end)
