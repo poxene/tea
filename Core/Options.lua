@@ -40,6 +40,15 @@ local SECTIONS = {
       },
       { label = "Repair warning at vendors", path = { "modules", "repairWarning" } },
       {
+        label = "Advanced stats panel on character sheet",
+        path = { "modules", "advancedStats" },
+        onChange = function()
+          if Tea_RefreshAdvancedStats then
+            Tea_RefreshAdvancedStats()
+          end
+        end,
+      },
+      {
         label = "Show minimap button",
         path = { "minimap", "show" },
         onChange = function(checked)

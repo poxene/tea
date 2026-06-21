@@ -10,6 +10,7 @@ local defaults = {
     teaBank = true,
     resourceBars = false,
     castBars = false,
+    advancedStats = true,
   },
   tooltip = {
     draggable = true,
@@ -38,6 +39,9 @@ local defaults = {
   },
   teaBank = {
     columns = 8,
+  },
+  advancedStats = {
+    open = false,
   },
   minimap = {
     show = true,
